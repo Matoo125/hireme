@@ -6,6 +6,7 @@ const countEl = document.getElementById("count");
 const emptyEl = document.getElementById("empty");
 const activeTagsEl = document.getElementById("activeTags");
 const sourceFiltersEl = document.getElementById("sourceFilters");
+const detailToggleEls = document.querySelectorAll(".detail-toggle");
 
 let jobs = [];
 const activeTags = new Set();
@@ -30,6 +31,47 @@ function saveIdSet(key, set) {
 
 const likedJobs = loadIdSet(LIKED_KEY);
 const hiddenJobs = loadIdSet(HIDDEN_KEY);
+
+// Granular, global control over which detail sections cards show:
+// job board tags (source badges), salary, description, and topic tags.
+// Every card respects the same settings - there's no per-card override.
+const DETAIL_SETTINGS_KEY = "jobBoard.detailSettings";
+const DETAIL_KEYS = ["sources", "salary", "description", "tags"];
+
+function loadDetailSettings() {
+  let saved = {};
+  try {
+    saved = JSON.parse(localStorage.getItem(DETAIL_SETTINGS_KEY) || "{}");
+  } catch {
+    saved = {};
+  }
+  const settings = {};
+  for (const key of DETAIL_KEYS) settings[key] = Boolean(saved[key]);
+  return settings;
+}
+
+const detailSettings = loadDetailSettings();
+
+function saveDetailSettings() {
+  localStorage.setItem(DETAIL_SETTINGS_KEY, JSON.stringify(detailSettings));
+}
+
+function renderDetailToggles() {
+  for (const btn of detailToggleEls) {
+    btn.classList.toggle("active", detailSettings[btn.dataset.detail]);
+  }
+}
+
+for (const btn of detailToggleEls) {
+  btn.addEventListener("click", () => {
+    const key = btn.dataset.detail;
+    detailSettings[key] = !detailSettings[key];
+    saveDetailSettings();
+    renderDetailToggles();
+    render();
+  });
+}
+renderDetailToggles();
 
 function toggleLiked(id) {
   if (likedJobs.has(id)) likedJobs.delete(id);
@@ -169,6 +211,89 @@ function tagChip(tag) {
   return chip;
 }
 
+function buildSourceRow(job) {
+  const sources = splitSources(job);
+  if (!sources.length) return null;
+  const row = document.createElement("div");
+  row.className = "job-tags";
+  for (const source of sources) {
+    const badge = document.createElement("span");
+    badge.className = "chip source-chip";
+    badge.textContent = source;
+    row.appendChild(badge);
+  }
+  return row;
+}
+
+function buildSalaryRow(job) {
+  if (!job.salary_range) return null;
+  const salary = document.createElement("div");
+  salary.className = "job-salary";
+  salary.textContent = job.salary_range;
+  return salary;
+}
+
+function buildDescriptionBlock(job) {
+  if (!job.description) return null;
+  const wrap = document.createElement("div");
+  wrap.className = "job-desc-wrap";
+
+  const desc = document.createElement("p");
+  desc.className = "job-desc";
+  desc.textContent = job.description;
+  wrap.appendChild(desc);
+
+  const toggle = document.createElement("button");
+  toggle.className = "job-desc-toggle";
+  toggle.textContent = "Show more";
+  // Hidden until the deferred overflow check (see updateDescriptionToggles)
+  // confirms the text actually needs clamping.
+  toggle.hidden = true;
+  toggle.addEventListener("click", () => {
+    const expanded = wrap.classList.toggle("expanded");
+    toggle.textContent = expanded ? "Show less" : "Show more";
+  });
+  wrap.appendChild(toggle);
+
+  return wrap;
+}
+
+function buildTagsRow(job, { collapse }) {
+  const tags = splitTags(job);
+  if (!tags.length) return null;
+  const tagRow = document.createElement("div");
+  tagRow.className = "job-tags";
+  const hasOverflow = collapse && tags.length > MAX_VISIBLE_TAGS;
+  const visibleTags = hasOverflow ? tags.slice(0, MAX_VISIBLE_TAGS) : tags;
+  const hiddenTags = hasOverflow ? tags.slice(MAX_VISIBLE_TAGS) : [];
+
+  for (const tag of visibleTags) {
+    tagRow.appendChild(tagChip(tag));
+  }
+
+  if (hasOverflow) {
+    for (const tag of hiddenTags) {
+      const chip = tagChip(tag);
+      chip.hidden = true;
+      chip.dataset.overflow = "true";
+      tagRow.appendChild(chip);
+    }
+    const more = document.createElement("button");
+    more.className = "chip more-toggle";
+    more.textContent = `+${hiddenTags.length} more`;
+    more.addEventListener("click", () => {
+      const expanded = tagRow.classList.toggle("expanded");
+      for (const chip of tagRow.querySelectorAll('[data-overflow="true"]')) {
+        chip.hidden = !expanded;
+      }
+      more.textContent = expanded ? "Show less" : `+${hiddenTags.length} more`;
+    });
+    tagRow.appendChild(more);
+  }
+
+  return tagRow;
+}
+
 function toggleTag(tag) {
   if (activeTags.has(tag)) activeTags.delete(tag);
   else activeTags.add(tag);
@@ -280,75 +405,42 @@ function jobCard(job) {
   top.appendChild(rightCol);
   el.appendChild(top);
 
-  const sources = splitSources(job);
-  if (sources.length) {
-    const sourceRow = document.createElement("div");
-    sourceRow.className = "job-tags";
-    for (const source of sources) {
-      const badge = document.createElement("span");
-      badge.className = "chip source-chip";
-      badge.textContent = source;
-      sourceRow.appendChild(badge);
-    }
-    el.appendChild(sourceRow);
+  const sections = {
+    sources: buildSourceRow(job),
+    salary: buildSalaryRow(job),
+    description: buildDescriptionBlock(job),
+    tags: buildTagsRow(job, { collapse: true }),
+  };
+
+  let cardExpanded = false;
+  let hasHiddenContent = false;
+  for (const key of DETAIL_KEYS) {
+    const section = sections[key];
+    if (!section) continue;
+    section.hidden = !detailSettings[key];
+    if (!detailSettings[key]) hasHiddenContent = true;
+    el.appendChild(section);
   }
 
-  if (job.salary_range) {
-    const salary = document.createElement("div");
-    salary.className = "job-salary";
-    salary.textContent = job.salary_range;
-    el.appendChild(salary);
-  }
-
-  if (job.description) {
-    const desc = document.createElement("p");
-    desc.className = "job-desc";
-    desc.textContent = job.description;
-    el.appendChild(desc);
-
-    const toggle = document.createElement("button");
-    toggle.className = "job-desc-toggle";
-    toggle.textContent = "Show more";
-    toggle.addEventListener("click", () => {
-      el.classList.toggle("expanded");
-      toggle.textContent = el.classList.contains("expanded") ? "Show less" : "Show more";
-    });
-    el.appendChild(toggle);
-  }
-
-  const tags = splitTags(job);
-  if (tags.length) {
-    const tagRow = document.createElement("div");
-    tagRow.className = "job-tags";
-    const hasOverflow = tags.length > MAX_VISIBLE_TAGS;
-    const visibleTags = hasOverflow ? tags.slice(0, MAX_VISIBLE_TAGS) : tags;
-    const hiddenTags = hasOverflow ? tags.slice(MAX_VISIBLE_TAGS) : [];
-
-    for (const tag of visibleTags) {
-      tagRow.appendChild(tagChip(tag));
-    }
-
-    if (hasOverflow) {
-      for (const tag of hiddenTags) {
-        const chip = tagChip(tag);
-        chip.hidden = true;
-        chip.dataset.overflow = "true";
-        tagRow.appendChild(chip);
-      }
-      const more = document.createElement("button");
-      more.className = "chip more-toggle";
-      more.textContent = `+${hiddenTags.length} more`;
-      more.addEventListener("click", () => {
-        const expanded = tagRow.classList.toggle("expanded");
-        for (const chip of tagRow.querySelectorAll('[data-overflow="true"]')) {
-          chip.hidden = !expanded;
+  if (hasHiddenContent) {
+    el.classList.add("expandable");
+    el.addEventListener("click", (e) => {
+      if (e.target.closest("a, button")) return;
+      cardExpanded = !cardExpanded;
+      el.classList.toggle("card-expanded", cardExpanded);
+      for (const key of DETAIL_KEYS) {
+        const section = sections[key];
+        if (!section || detailSettings[key]) continue;
+        section.hidden = !cardExpanded;
+        if (key === "description" && cardExpanded) {
+          // Revealed via the card-level override, not the global
+          // "Description" setting - show it in full, no clamp/toggle.
+          section.classList.add("expanded");
+          const toggle = section.querySelector(".job-desc-toggle");
+          if (toggle) toggle.hidden = true;
         }
-        more.textContent = expanded ? "Show less" : `+${hiddenTags.length} more`;
-      });
-      tagRow.appendChild(more);
-    }
-
-    el.appendChild(tagRow);
+      }
+    });
   }
 
   return el;
@@ -359,6 +451,19 @@ function renderViewOptions() {
   const hiddenCount = jobs.filter((j) => hiddenJobs.has(j.id)).length;
   viewEl.options[1].textContent = `Liked (${likedCount})`;
   viewEl.options[2].textContent = `Not relevant (${hiddenCount})`;
+}
+
+function updateDescriptionToggles() {
+  // Batched on purpose: reading scrollHeight forces layout, so doing
+  // it once after every card is in the DOM (rather than per-card as
+  // each is built) avoids a reflow per job.
+  const wraps = jobsEl.querySelectorAll(".job-desc-wrap:not([hidden]):not(.expanded)");
+  for (const wrap of wraps) {
+    const desc = wrap.querySelector(".job-desc");
+    const toggle = wrap.querySelector(".job-desc-toggle");
+    if (!desc || !toggle) continue;
+    toggle.hidden = desc.scrollHeight <= desc.clientHeight + 1;
+  }
 }
 
 function render() {
@@ -381,6 +486,7 @@ function render() {
   for (const job of sorted) {
     jobsEl.appendChild(jobCard(job));
   }
+  requestAnimationFrame(updateDescriptionToggles);
 }
 
 async function init() {

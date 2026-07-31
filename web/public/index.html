@@ -9,7 +9,7 @@
 <body>
   <header>
     <h1>Hireme.sk</h1>
-    <p class="subtitle">We highlight impactful opportunities that are relevant for seekers from Slovakia, or anywhere in the world. You can see the data in <a href="https://airtable.com/appgt87HxTF26Orqm/shrdINsIjsRZGo7Im">airtable</a> as well.</p>
+    <p class="subtitle">We highlight impactful opportunities that are relevant for seekers from Slovakia, or anywhere in the world. You can see the data in <a href="https://airtable.com/appgt87HxTF26Orqm/shrdINsIjsRZGo7Im">airtable</a> as well. Jobs are sourced from following job boards <a href="">80 000 hours</a>, <a href="">Probably Good</a><a href="">CEA Opportunities board</a>, and <a href="">Effective Animal Advocacy</a>. We plan to expand it with support of local opportunities in Slovakia, as well as additional international sources. </p>
 
     <div class="controls">
       <input id="search" type="search" placeholder="Search title, org, tags…" autofocus />
@@ -24,6 +24,14 @@
         <option value="liked">Liked</option>
         <option value="hidden">Not relevant</option>
       </select>
+    </div>
+
+    <div class="chip-row">
+      <span class="detail-toggles-label">Show:</span>
+      <button type="button" class="chip detail-toggle" data-detail="sources">Job board tags</button>
+      <button type="button" class="chip detail-toggle" data-detail="salary">Salary</button>
+      <button type="button" class="chip detail-toggle" data-detail="description">Description</button>
+      <button type="button" class="chip detail-toggle" data-detail="tags">Tags</button>
     </div>
 
     <div id="sourceFilters" class="chip-row"></div>

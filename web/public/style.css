@@ -134,8 +134,11 @@ button.chip.source-chip {
   color: var(--muted);
 }
 
-.chip[hidden] {
-  display: none;
+/* [hidden] loses to any author rule that sets its own `display`
+   (equal specificity, author wins over the UA stylesheet) - so any
+   element toggled via .hidden needs display:none to actually stick. */
+[hidden] {
+  display: none !important;
 }
 
 .chip.removable::after {
@@ -156,6 +159,14 @@ main {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 1.1rem 1.25rem;
+}
+
+.job.expandable {
+  cursor: pointer;
+}
+
+.job.expandable:hover {
+  border-color: var(--muted);
 }
 
 .job-top {
@@ -251,8 +262,12 @@ main {
   font-weight: 500;
 }
 
+.job-desc-wrap {
+  margin-top: 0.6rem;
+}
+
 .job-desc {
-  margin: 0.6rem 0 0;
+  margin: 0;
   font-size: 0.88rem;
   color: var(--fg);
   display: -webkit-box;
@@ -261,7 +276,7 @@ main {
   overflow: hidden;
 }
 
-.job.expanded .job-desc {
+.job-desc-wrap.expanded .job-desc {
   -webkit-line-clamp: unset;
 }
 
@@ -271,7 +286,8 @@ main {
   color: var(--accent);
   font-size: 0.8rem;
   cursor: pointer;
-  padding: 0.3rem 0;
+  padding: 0.3rem 0 0;
+  display: block;
 }
 
 .job-tags {
@@ -279,6 +295,17 @@ main {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
+}
+
+.detail-toggles-label {
+  font-size: 0.78rem;
+  color: var(--muted);
+  align-self: center;
+}
+
+.chip.detail-toggle {
+  background: transparent;
+  border: 1px solid var(--border);
 }
 
 .empty {
