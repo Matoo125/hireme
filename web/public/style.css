@@ -161,9 +161,56 @@ main {
 .job-top {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: flex-start;
   gap: 0.75rem;
   flex-wrap: wrap;
+}
+
+.job-top-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.job-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.action-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 6px;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.action-btn:hover {
+  border-color: var(--muted);
+}
+
+.action-btn.like-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.action-btn.hide-btn.active {
+  background: var(--muted);
+  border-color: var(--muted);
+  color: var(--bg);
+}
+
+.job.is-liked {
+  border-color: var(--accent);
+}
+
+.job.is-hidden {
+  opacity: 0.7;
 }
 
 .job-title {

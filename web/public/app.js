@@ -1,6 +1,7 @@
 const jobsEl = document.getElementById("jobs");
 const searchEl = document.getElementById("search");
 const sortEl = document.getElementById("sort");
+const viewEl = document.getElementById("view");
 const countEl = document.getElementById("count");
 const emptyEl = document.getElementById("empty");
 const activeTagsEl = document.getElementById("activeTags");
@@ -9,6 +10,40 @@ const sourceFiltersEl = document.getElementById("sourceFilters");
 let jobs = [];
 const activeTags = new Set();
 const activeSources = new Set();
+
+// Liked/hidden state is experimental and lives only in this browser's
+// localStorage - there's no backend to sync it anywhere.
+const LIKED_KEY = "jobBoard.liked";
+const HIDDEN_KEY = "jobBoard.hidden";
+
+function loadIdSet(key) {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(key) || "[]"));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveIdSet(key, set) {
+  localStorage.setItem(key, JSON.stringify([...set]));
+}
+
+const likedJobs = loadIdSet(LIKED_KEY);
+const hiddenJobs = loadIdSet(HIDDEN_KEY);
+
+function toggleLiked(id) {
+  if (likedJobs.has(id)) likedJobs.delete(id);
+  else likedJobs.add(id);
+  saveIdSet(LIKED_KEY, likedJobs);
+  render();
+}
+
+function toggleHidden(id) {
+  if (hiddenJobs.has(id)) hiddenJobs.delete(id);
+  else hiddenJobs.add(id);
+  saveIdSet(HIDDEN_KEY, hiddenJobs);
+  render();
+}
 
 function splitTags(job) {
   return (job.tags || "")
@@ -90,6 +125,18 @@ function matchesActiveSources(job) {
   return sources.some((s) => activeSources.has(s));
 }
 
+function matchesView(job, mode) {
+  switch (mode) {
+    case "liked":
+      return likedJobs.has(job.id) && !hiddenJobs.has(job.id);
+    case "hidden":
+      return hiddenJobs.has(job.id);
+    case "all":
+    default:
+      return !hiddenJobs.has(job.id);
+  }
+}
+
 function sortJobs(list, mode) {
   const sorted = [...list];
   switch (mode) {
@@ -164,7 +211,9 @@ function renderSourceFilters() {
 
 function jobCard(job) {
   const el = document.createElement("article");
-  el.className = "job";
+  const isLiked = likedJobs.has(job.id);
+  const isHidden = hiddenJobs.has(job.id);
+  el.className = "job" + (isLiked ? " is-liked" : "") + (isHidden ? " is-hidden" : "");
 
   const top = document.createElement("div");
   top.className = "job-top";
@@ -205,8 +254,30 @@ function jobCard(job) {
   if (job.close_date) titleParts.push(`Closes: ${job.close_date}`);
   if (titleParts.length) meta.title = titleParts.join("\n");
 
+  const actions = document.createElement("div");
+  actions.className = "job-actions";
+
+  const likeBtn = document.createElement("button");
+  likeBtn.className = "action-btn like-btn" + (isLiked ? " active" : "");
+  likeBtn.textContent = isLiked ? "★ Liked" : "☆ Like";
+  likeBtn.title = isLiked ? "Remove from liked" : "Mark as liked";
+  likeBtn.addEventListener("click", () => toggleLiked(job.id));
+  actions.appendChild(likeBtn);
+
+  const hideBtn = document.createElement("button");
+  hideBtn.className = "action-btn hide-btn" + (isHidden ? " active" : "");
+  hideBtn.textContent = isHidden ? "↺ Restore" : "✕ Not relevant";
+  hideBtn.title = isHidden ? "Restore to list" : "Hide as not relevant";
+  hideBtn.addEventListener("click", () => toggleHidden(job.id));
+  actions.appendChild(hideBtn);
+
+  const rightCol = document.createElement("div");
+  rightCol.className = "job-top-right";
+  rightCol.appendChild(meta);
+  rightCol.appendChild(actions);
+
   top.appendChild(titleWrap);
-  top.appendChild(meta);
+  top.appendChild(rightCol);
   el.appendChild(top);
 
   const sources = splitSources(job);
@@ -283,15 +354,27 @@ function jobCard(job) {
   return el;
 }
 
+function renderViewOptions() {
+  const likedCount = jobs.filter((j) => likedJobs.has(j.id) && !hiddenJobs.has(j.id)).length;
+  const hiddenCount = jobs.filter((j) => hiddenJobs.has(j.id)).length;
+  viewEl.options[1].textContent = `Liked (${likedCount})`;
+  viewEl.options[2].textContent = `Not relevant (${hiddenCount})`;
+}
+
 function render() {
   const term = searchEl.value.trim().toLowerCase();
   const filtered = jobs.filter(
-    (j) => matchesSearch(j, term) && matchesActiveTags(j) && matchesActiveSources(j)
+    (j) =>
+      matchesSearch(j, term) &&
+      matchesActiveTags(j) &&
+      matchesActiveSources(j) &&
+      matchesView(j, viewEl.value)
   );
   const sorted = sortJobs(filtered, sortEl.value);
 
   renderSourceFilters();
   renderActiveTags();
+  renderViewOptions();
   countEl.textContent = `${sorted.length} job${sorted.length === 1 ? "" : "s"}`;
   jobsEl.innerHTML = "";
   emptyEl.hidden = sorted.length > 0;
@@ -309,5 +392,6 @@ async function init() {
 
 searchEl.addEventListener("input", render);
 sortEl.addEventListener("change", render);
+viewEl.addEventListener("change", render);
 
 init();

@@ -10,7 +10,10 @@ import requests
 HTML_TAG_RE = re.compile(r"<[^>]+>")
 
 # Common CSV/output schema every scraper module must produce per job.
+# Note: "id" is added later by scrapers.dedupe (it's derived from the
+# post-merge record, not something individual board scrapers set).
 FIELDNAMES = [
+    "id",
     "source",
     "title",
     "link",

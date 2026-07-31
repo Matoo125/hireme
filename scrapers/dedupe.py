@@ -15,6 +15,7 @@ unioned, and a `sources` column records every board the job was found
 on.
 """
 
+import hashlib
 import re
 from urllib.parse import urlsplit
 
@@ -47,6 +48,16 @@ def _dedup_key(job):
         normalize_text(job.get("organization_name", "")),
         normalize_text(job.get("title", "")),
     )
+
+
+def stable_id(job):
+    """A short id derived from the same identity key used for deduping,
+    so it stays consistent across re-scrapes for as long as a job's
+    link (or org+title) doesn't change - which is what lets the
+    frontend remember likes/hides in localStorage between runs."""
+    key = _dedup_key(job)
+    digest = hashlib.md5("|".join(key).encode("utf-8")).hexdigest()
+    return digest[:12]
 
 
 def _merge_tag_strings(tag_strings):
@@ -95,5 +106,6 @@ def merge_duplicates(jobs):
             if dup["source"] not in sources:
                 sources.append(dup["source"])
         primary["source"] = "; ".join(sources)
+        primary["id"] = stable_id(primary)
         merged.append(primary)
     return merged
