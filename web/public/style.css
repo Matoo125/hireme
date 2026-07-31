@@ -1,0 +1,242 @@
+:root {
+  --bg: #fafafa;
+  --fg: #1a1a1a;
+  --muted: #6b6b6b;
+  --border: #e3e3e3;
+  --card-bg: #ffffff;
+  --accent: #2a5aa8;
+  --chip-bg: #eef1f5;
+  --chip-fg: #34456b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15161a;
+    --fg: #e8e8e8;
+    --muted: #9a9a9a;
+    --border: #2b2c31;
+    --card-bg: #1c1d22;
+    --accent: #7fa8e0;
+    --chip-bg: #262a33;
+    --chip-fg: #b7c6e6;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 2.5rem 1.25rem 4rem;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.45;
+}
+
+header {
+  max-width: 720px;
+  margin: 0 auto 2rem;
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin: 0 0 0.25rem;
+  font-weight: 600;
+}
+
+.subtitle {
+  margin: 0 0 1.25rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+#search {
+  flex: 1;
+  min-width: 0;
+}
+
+input,
+select {
+  font-size: 0.9rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card-bg);
+  color: var(--fg);
+}
+
+input:focus,
+select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.count {
+  margin: 0.9rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.9rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--chip-bg);
+  color: var(--chip-fg);
+  border: none;
+  border-radius: 999px;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+  line-height: 1.6;
+}
+
+.chip.active {
+  background: var(--accent);
+  color: white;
+}
+
+.chip.source-chip {
+  background: transparent;
+  border: 1px solid var(--muted);
+  color: var(--muted);
+  font-weight: 500;
+  cursor: default;
+}
+
+button.chip.source-chip {
+  cursor: pointer;
+}
+
+.chip.source-chip.active {
+  background: var(--fg);
+  color: var(--bg);
+  border-color: var(--fg);
+}
+
+.chip.more-toggle {
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--muted);
+}
+
+.chip[hidden] {
+  display: none;
+}
+
+.chip.removable::after {
+  content: "×";
+  margin-left: 0.15rem;
+}
+
+main {
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.job {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.1rem 1.25rem;
+}
+
+.job-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.job-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.job-title a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.job-title a:hover {
+  text-decoration: underline;
+}
+
+.job-org {
+  margin: 0.15rem 0 0;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.job-org a {
+  color: inherit;
+}
+
+.job-meta {
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.job-salary {
+  display: inline-block;
+  margin-top: 0.6rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.job-desc {
+  margin: 0.6rem 0 0;
+  font-size: 0.88rem;
+  color: var(--fg);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.job.expanded .job-desc {
+  -webkit-line-clamp: unset;
+}
+
+.job-desc-toggle {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0.3rem 0;
+}
+
+.job-tags {
+  margin-top: 0.7rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.empty {
+  max-width: 720px;
+  margin: 2rem auto;
+  text-align: center;
+  color: var(--muted);
+}

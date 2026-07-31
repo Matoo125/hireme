@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Remote, Global Jobs — EA Job Boards</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Remote, Global Jobs</h1>
+    <p class="subtitle">Combined from 80,000 Hours, Probably Good, the EA Opportunities Board & Animal Advocacy Careers — duplicates merged</p>
+
+    <div class="controls">
+      <input id="search" type="search" placeholder="Search title, org, tags…" autofocus />
+      <select id="sort">
+        <option value="posted_desc">Newest first</option>
+        <option value="posted_asc">Oldest first</option>
+        <option value="closing_soon">Closing soon</option>
+        <option value="org">Organization A–Z</option>
+      </select>
+    </div>
+
+    <div id="sourceFilters" class="chip-row"></div>
+    <div id="activeTags" class="chip-row"></div>
+    <p id="count" class="count"></p>
+  </header>
+
+  <main id="jobs"></main>
+
+  <p id="empty" class="empty" hidden>No jobs match your filters.</p>
+
+  <script src="/app.js"></script>
+</body>
+</html>

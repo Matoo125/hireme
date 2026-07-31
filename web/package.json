@@ -1,0 +1,7 @@
+{
+  "name": "80000hours-jobs-web",
+  "private": true,
+  "scripts": {
+    "start": "bun run server.ts"
+  }
+}
