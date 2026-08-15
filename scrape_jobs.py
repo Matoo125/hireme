@@ -45,14 +45,18 @@ def main():
     args = parser.parse_args()
 
     all_jobs = []
+    problems = []
     for name, fetch in SCRAPERS:
         print(f"Fetching from {name}...")
         try:
             jobs = fetch()
         except Exception as exc:
             print(f"  failed: {exc}", file=sys.stderr)
+            problems.append(f"{name}: raised {exc!r}")
             continue
         print(f"  got {len(jobs)} jobs")
+        if len(jobs) == 0:
+            problems.append(f"{name}: returned 0 jobs")
         all_jobs.extend(jobs)
 
     print(f"Total before dedup: {len(all_jobs)}")
@@ -66,6 +70,18 @@ def main():
             writer.writerow(job)
 
     print(f"Wrote {len(merged)} jobs to {args.output}")
+
+    # A board that raised or came back empty is a signal something broke (e.g. a
+    # site redesign tripping up a scraper), not necessarily "no jobs today" - job
+    # boards essentially never legitimately hit zero. Exiting non-zero here is what
+    # makes that visible: this script runs unattended via hireme-scrape.timer, and a
+    # failed exit status is what shows up in `systemctl --failed` / `systemctl status
+    # hireme-scrape.service`, instead of the run silently reporting success either way.
+    if problems:
+        print(f"\n{len(problems)} board(s) had problems this run:", file=sys.stderr)
+        for p in problems:
+            print(f"  - {p}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

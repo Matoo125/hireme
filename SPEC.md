@@ -60,8 +60,14 @@ results, then `dedupe.merge_duplicates()`:
   boards that wrap links in their own tracking redirect).
 - On merge: empty fields filled in first-seen-wins from duplicates, tags unioned, `source`
   becomes every board the job was found on.
-- A scraper module raising is caught and logged per-board (`scrape_jobs.py:50-54`) — one board
-  failing doesn't abort the run, but the run reports nothing wrong either (see §7).
+- A scraper module raising, or returning zero jobs, is caught and logged per-board — one board
+  failing doesn't abort the run, but is treated as a problem: `scrape_jobs.py` still writes
+  `jobs.csv` from whichever boards succeeded, then exits non-zero if any board raised or came
+  back empty (job boards essentially never legitimately hit zero, so an empty result is treated
+  as a signal something broke, e.g. a site redesign). Since this runs unattended via
+  `hireme-scrape.timer`, a non-zero exit is what makes a degraded run visible —
+  `systemctl status hireme-scrape.service` / `systemctl --failed` will show it as failed instead
+  of a silently "successful" run that quietly lost a board.
 
 Adding a board = new `scrapers/<name>.py` with `fetch_jobs()` returning `FIELDNAMES`-shaped
 dicts, registered in `SCRAPERS` in `scrape_jobs.py`. Three existing implementation patterns to
@@ -96,9 +102,6 @@ tag or source board, and the like/not-relevant triage state described in §3.
 
 ## 7. Known gaps
 
-- Per-board scrape failures are caught and printed to stderr but nothing surfaces them anywhere
-  persistent (no alerting, no failure count in the CSV/output) — a board silently returning 0
-  jobs every day (e.g. after a site redesign) would go unnoticed.
 - No Python dependency pinning (`requirements.txt` absent) — `pip install requests` on a fresh
   box is undocumented.
 - Server-side `jobs.csv` vs. git `jobs.csv` can drift silently (§6).
