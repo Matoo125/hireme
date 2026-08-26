@@ -28,6 +28,7 @@ ALGOLIA_SEARCH_KEY_QUERY = """
         index_name_profiles
         index_name_jobs
         index_name_jobs_sorted_by_closes_at
+        jobs_object_id_field
       }
     }
   """
