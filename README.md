@@ -46,9 +46,9 @@ Wrote 509 jobs to jobs.csv
 ```
 
 `jobs.csv` is checked into git as a point-in-time snapshot so the web
-app works out of the box after a fresh clone. Rerun the scraper and
-commit the result whenever you want fresher listings - nothing does
-this automatically.
+app works out of the box after a fresh clone. On this server
+`scrape_and_sync.sh` now commits and pushes the refreshed `jobs.csv`
+automatically after each daily scrape - no manual step needed.
 
 ## Running the web app
 

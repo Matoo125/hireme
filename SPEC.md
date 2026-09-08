@@ -92,11 +92,12 @@ tag or source board, and the like/not-relevant triage state described in §3.
 - `hireme.service` — `bun run server.ts`, `PORT=4020`, user `ubuntu`, restart on failure.
 - `hireme-scrape.timer` — daily at 06:00 (±10min random delay), runs `hireme-scrape.service`
   (`python3 scrape_jobs.py -o jobs.csv`) as a oneshot.
-- **Nothing commits the refreshed `jobs.csv`** — the daily timer overwrites the working tree file
-  but the README explicitly says committing is manual ("Rerun the scraper and commit the result
-  whenever you want fresher listings - nothing does this automatically"). On the server this
-  likely means the deployed `jobs.csv` silently drifts from what's in git until someone commits it
-  — worth confirming whether that's intended or a gap.
+- **`jobs.csv` is auto-committed and pushed after each scrape** (`scrape_and_sync.sh`
+  runs the git commit/rebase/push itself), so the deployed `jobs.csv` stays in sync with
+  git — the repo deliberately no longer waits on a manual commit. The "sync jobs"
+  commit is rebased on top of `origin/main` (via `git pull --rebase --autostash`) before
+  pushing; if that hits a conflict the script aborts the rebase and exits non-zero so it
+  shows up in `systemctl --failed`.
 - No CI, no tests, no requirements.txt / lockfile for the Python side (relies on `requests` being
   present in the system/venv).
 
@@ -104,7 +105,9 @@ tag or source board, and the like/not-relevant triage state described in §3.
 
 - No Python dependency pinning (`requirements.txt` absent) — `pip install requests` on a fresh
   box is undocumented.
-- Server-side `jobs.csv` vs. git `jobs.csv` can drift silently (§6).
+- Server-side `jobs.csv` vs. git `jobs.csv` can drift silently (§6) — mitigated 2026-09-08 by
+  auto-committing/pushing after each scrape; any residual drift is confined to scrape/push
+  failures that surface in `systemctl --failed`.
 - No relevance filtering/scoring beyond the four hardcoded boards — the "is this job relevant to
   me" triage described in `instructions.txt` is entirely manual (browser like/hide), not automated.
 
