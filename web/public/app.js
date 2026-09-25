@@ -1,3 +1,205 @@
+// ── Auth ─────────────────────────────────────────────────────────────────────
+
+const AUTH_URL = "https://api.altfresh.sk";
+const TOKEN_KEY = "hireme.token";
+const USER_KEY = "hireme.user";
+
+let cachedJwt = null;
+let jwtExpiresAt = 0;
+
+function getSessionToken() {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+function getUser() {
+  return localStorage.getItem(USER_KEY);
+}
+
+function isLoggedIn() {
+  return Boolean(getSessionToken());
+}
+
+async function getJwt() {
+  if (cachedJwt && Date.now() < jwtExpiresAt) return cachedJwt;
+  const token = getSessionToken();
+  if (!token) throw new Error("Not logged in");
+  const res = await fetch(`${AUTH_URL}/auth/token`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error("Session expired");
+  const data = await res.json();
+  cachedJwt = data.token;
+  jwtExpiresAt = Date.now() + 14 * 60 * 1000;
+  return cachedJwt;
+}
+
+function handleAuthCallback() {
+  const hash = window.location.hash;
+  if (!hash.includes("token=")) return;
+  const params = new URLSearchParams(hash.slice(1));
+  const token = params.get("token");
+  const user = params.get("user");
+  if (token) {
+    localStorage.setItem(TOKEN_KEY, token);
+    if (user) localStorage.setItem(USER_KEY, user);
+    // Clear the fragment without triggering a reload
+    history.replaceState(null, "", window.location.pathname + window.location.search);
+  }
+}
+
+function login() {
+  window.location.href = `${AUTH_URL}/?redirect=${encodeURIComponent(window.location.origin)}`;
+}
+
+function logout() {
+  const token = getSessionToken();
+  if (token) {
+    fetch(`${AUTH_URL}/auth/sign-out`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    }).catch(() => {});
+  }
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+  cachedJwt = null;
+  jwtExpiresAt = 0;
+  updateAuthUI();
+}
+
+function updateAuthUI() {
+  const loginBtn = document.getElementById("loginBtn");
+  const userInfo = document.getElementById("userInfo");
+  const userName = document.getElementById("userName");
+  const cvSection = document.getElementById("cvSection");
+
+  if (isLoggedIn()) {
+    loginBtn.hidden = true;
+    userInfo.hidden = false;
+    userName.textContent = getUser() || "User";
+    cvSection.hidden = false;
+    loadCvInfo();
+  } else {
+    loginBtn.hidden = false;
+    userInfo.hidden = true;
+    cvSection.hidden = true;
+  }
+}
+
+// ── CV ───────────────────────────────────────────────────────────────────────
+
+async function loadCvInfo() {
+  const cvInfo = document.getElementById("cvInfo");
+  const cvFilename = document.getElementById("cvFilename");
+  const cvDate = document.getElementById("cvDate");
+  const cvStatus = document.getElementById("cvStatus");
+
+  try {
+    const jwt = await getJwt();
+    const res = await fetch("/api/cv", {
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+    if (res.status === 404) {
+      cvInfo.hidden = true;
+      return;
+    }
+    if (!res.ok) throw new Error("Failed to load CV info");
+    const meta = await res.json();
+    cvFilename.textContent = meta.filename;
+    cvDate.textContent = `uploaded ${new Date(meta.uploadedAt).toLocaleDateString()}`;
+    cvInfo.hidden = false;
+  } catch (err) {
+    cvInfo.hidden = true;
+    if (err.message === "Session expired") {
+      logout();
+    }
+  }
+}
+
+async function uploadCv() {
+  const fileInput = document.getElementById("cvFile");
+  const cvStatus = document.getElementById("cvStatus");
+  const file = fileInput.files[0];
+  if (!file) return;
+
+  cvStatus.hidden = false;
+  cvStatus.textContent = "Uploading...";
+  cvStatus.className = "cv-status";
+
+  try {
+    const jwt = await getJwt();
+    const res = await fetch(`/api/cv?filename=${encodeURIComponent(file.name)}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+        "Content-Type": "application/pdf",
+      },
+      body: file,
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || "Upload failed");
+    }
+    cvStatus.textContent = "CV uploaded.";
+    fileInput.value = "";
+    document.getElementById("cvUploadBtn").disabled = true;
+    setTimeout(() => { cvStatus.hidden = true; }, 2500);
+    await loadCvInfo();
+  } catch (err) {
+    cvStatus.textContent = err.message;
+    cvStatus.className = "cv-status cv-status--error";
+  }
+}
+
+async function downloadCv(e) {
+  e.preventDefault();
+  try {
+    const jwt = await getJwt();
+    const res = await fetch("/api/cv/file", {
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+    if (!res.ok) throw new Error("Download failed");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const disposition = res.headers.get("Content-Disposition");
+    const match = disposition?.match(/filename="(.+)"/);
+    a.download = match ? match[1] : "cv.pdf";
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function deleteCv() {
+  if (!confirm("Delete your CV?")) return;
+  try {
+    const jwt = await getJwt();
+    const res = await fetch("/api/cv", {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+    if (!res.ok) throw new Error("Delete failed");
+    document.getElementById("cvInfo").hidden = true;
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+// Auth event listeners
+handleAuthCallback();
+document.getElementById("loginBtn").addEventListener("click", login);
+document.getElementById("logoutBtn").addEventListener("click", logout);
+document.getElementById("cvUploadBtn").addEventListener("click", uploadCv);
+document.getElementById("cvDownload").addEventListener("click", downloadCv);
+document.getElementById("cvDelete").addEventListener("click", deleteCv);
+document.getElementById("cvFile").addEventListener("change", (e) => {
+  document.getElementById("cvUploadBtn").disabled = !e.target.files.length;
+});
+
+// ── Job board ────────────────────────────────────────────────────────────────
+
 const jobsEl = document.getElementById("jobs");
 const searchEl = document.getElementById("search");
 const sortEl = document.getElementById("sort");
@@ -490,6 +692,7 @@ function render() {
 }
 
 async function init() {
+  updateAuthUI();
   countEl.textContent = "Loading…";
   const res = await fetch("/api/jobs");
   jobs = await res.json();

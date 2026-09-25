@@ -8,8 +8,33 @@
 </head>
 <body>
   <header>
-    <h1>Hireme.sk</h1>
+    <div class="header-top">
+      <h1>Hireme.sk</h1>
+      <div id="authControls" class="auth-controls">
+        <button id="loginBtn" class="auth-btn" hidden>Login</button>
+        <span id="userInfo" class="user-info" hidden>
+          <span id="userName"></span>
+          <button id="logoutBtn" class="auth-btn auth-btn--small">Logout</button>
+        </span>
+      </div>
+    </div>
     <p class="subtitle">We highlight impactful opportunities that are relevant for seekers from Slovakia, or anywhere in the world. You can see the data in <a href="https://airtable.com/appgt87HxTF26Orqm/shrdINsIjsRZGo7Im">airtable</a> as well. Jobs are sourced from following job boards <a href="">80 000 hours</a>, <a href="">Probably Good</a><a href="">CEA Opportunities board</a>, and <a href="">Effective Animal Advocacy</a>. We plan to expand it with support of local opportunities in Slovakia, as well as additional international sources. </p>
+
+    <div id="cvSection" class="cv-section" hidden>
+      <div id="cvInfo" class="cv-info" hidden>
+        <span id="cvFilename"></span>
+        <span id="cvDate" class="cv-date"></span>
+        <a id="cvDownload" class="cv-action" href="#">Download</a>
+        <button id="cvDelete" class="cv-action cv-action--danger">Delete</button>
+      </div>
+      <div id="cvUpload" class="cv-upload">
+        <label class="cv-file-label">
+          <input id="cvFile" type="file" accept=".pdf" />
+        </label>
+        <button id="cvUploadBtn" class="auth-btn auth-btn--small" disabled>Upload CV</button>
+      </div>
+      <p id="cvStatus" class="cv-status" hidden></p>
+    </div>
 
     <div class="controls">
       <input id="search" type="search" placeholder="Search title, org, tags…" autofocus />

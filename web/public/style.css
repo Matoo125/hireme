@@ -308,6 +308,105 @@ main {
   border: 1px solid var(--border);
 }
 
+/* ── Auth controls ──────────────────────────────────────────────────────── */
+
+.header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.auth-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.auth-btn {
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.auth-btn:hover {
+  opacity: 0.85;
+}
+
+.auth-btn--small {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.78rem;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--fg);
+}
+
+/* ── CV section ────────────────────────────────────────────────────────── */
+
+.cv-section {
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-bg);
+}
+
+.cv-info {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+  font-size: 0.85rem;
+}
+
+.cv-date {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.cv-action {
+  font-size: 0.78rem;
+  color: var(--accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.cv-action--danger {
+  color: #c44;
+}
+
+.cv-upload {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.cv-upload input[type="file"] {
+  font-size: 0.82rem;
+}
+
+.cv-status {
+  margin: 0.4rem 0 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.cv-status--error {
+  color: #c44;
+}
+
 .empty {
   max-width: 720px;
   margin: 2rem auto;
