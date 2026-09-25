@@ -214,8 +214,8 @@ let jobs = [];
 const activeTags = new Set();
 const activeSources = new Set();
 
-// Liked/hidden state is experimental and lives only in this browser's
-// localStorage - there's no backend to sync it anywhere.
+// Liked/hidden state persists in localStorage and, when logged in,
+// syncs to the server so it follows the user across devices.
 const LIKED_KEY = "jobBoard.liked";
 const HIDDEN_KEY = "jobBoard.hidden";
 
@@ -275,10 +275,51 @@ for (const btn of detailToggleEls) {
 }
 renderDetailToggles();
 
+async function savePreferences() {
+  if (!isLoggedIn()) return;
+  try {
+    const jwt = await getJwt();
+    fetch("/api/preferences", {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        liked: [...likedJobs],
+        hidden: [...hiddenJobs],
+      }),
+    });
+  } catch {}
+}
+
+async function loadPreferences() {
+  if (!isLoggedIn()) return;
+  try {
+    const jwt = await getJwt();
+    const res = await fetch("/api/preferences", {
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      likedJobs.clear();
+      hiddenJobs.clear();
+      for (const id of data.liked || []) likedJobs.add(id);
+      for (const id of data.hidden || []) hiddenJobs.add(id);
+      saveIdSet(LIKED_KEY, likedJobs);
+      saveIdSet(HIDDEN_KEY, hiddenJobs);
+      render();
+    } else if (res.status === 404 && (likedJobs.size || hiddenJobs.size)) {
+      savePreferences();
+    }
+  } catch {}
+}
+
 function toggleLiked(id) {
   if (likedJobs.has(id)) likedJobs.delete(id);
   else likedJobs.add(id);
   saveIdSet(LIKED_KEY, likedJobs);
+  savePreferences();
   render();
 }
 
@@ -286,6 +327,7 @@ function toggleHidden(id) {
   if (hiddenJobs.has(id)) hiddenJobs.delete(id);
   else hiddenJobs.add(id);
   saveIdSet(HIDDEN_KEY, hiddenJobs);
+  savePreferences();
   render();
 }
 
@@ -697,6 +739,7 @@ async function init() {
   const res = await fetch("/api/jobs");
   jobs = await res.json();
   render();
+  loadPreferences();
 }
 
 searchEl.addEventListener("input", render);

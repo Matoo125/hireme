@@ -10,6 +10,7 @@ const ROOT = import.meta.dir;
 const PUBLIC_DIR = path.join(ROOT, "public");
 const CSV_PATH = process.env.JOBS_CSV ?? path.join(ROOT, "..", "jobs.csv");
 const CV_DIR = path.join(ROOT, "..", "data", "cv");
+const PREFS_DIR = path.join(ROOT, "..", "data", "preferences");
 
 const MAX_CV_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -110,6 +111,12 @@ async function readCvMeta(userId: number): Promise<CvMeta | null> {
   return file.json();
 }
 
+// ── Preferences helpers ──────────────────────────────────────────────────────
+
+function prefsPath(userId: number): string {
+  return path.join(PREFS_DIR, `${userId}.json`);
+}
+
 // ── Server ───────────────────────────────────────────────────────────────────
 
 Bun.serve({
@@ -192,6 +199,39 @@ Bun.serve({
         try { await unlink(cvPdfPath(user.id)); } catch {}
         try { await unlink(cvMetaPath(user.id)); } catch {}
         return Response.json({ ok: true });
+      }
+
+      return new Response("Method not allowed", { status: 405 });
+    }
+
+    // ── Preferences endpoints ───────────────────────────────────────────────
+
+    if (url.pathname === "/api/preferences") {
+      let user: { id: number; username: string | null };
+      try {
+        user = await verifyToken(req.headers.get("authorization"));
+      } catch {
+        return Response.json({ error: "unauthorized" }, { status: 401 });
+      }
+
+      // GET /api/preferences
+      if (req.method === "GET") {
+        const file = Bun.file(prefsPath(user.id));
+        if (!(await file.exists())) {
+          return Response.json({ error: "No preferences" }, { status: 404 });
+        }
+        return Response.json(await file.json());
+      }
+
+      // PUT /api/preferences
+      if (req.method === "PUT") {
+        const body = await req.json();
+        const liked = Array.isArray(body.liked) ? body.liked : [];
+        const hidden = Array.isArray(body.hidden) ? body.hidden : [];
+        const data = { liked, hidden };
+        await mkdir(PREFS_DIR, { recursive: true });
+        await Bun.write(prefsPath(user.id), JSON.stringify(data));
+        return Response.json(data);
       }
 
       return new Response("Method not allowed", { status: 405 });
