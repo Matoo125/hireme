@@ -11,6 +11,7 @@ const PUBLIC_DIR = path.join(ROOT, "public");
 const CSV_PATH = process.env.JOBS_CSV ?? path.join(ROOT, "..", "jobs.csv");
 const CV_DIR = path.join(ROOT, "..", "data", "cv");
 const PREFS_DIR = path.join(ROOT, "..", "data", "preferences");
+const APPS_DIR = path.join(ROOT, "..", "data", "applications");
 
 const MAX_CV_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -115,6 +116,10 @@ async function readCvMeta(userId: number): Promise<CvMeta | null> {
 
 function prefsPath(userId: number): string {
   return path.join(PREFS_DIR, `${userId}.json`);
+}
+
+function appsPath(userId: number): string {
+  return path.join(APPS_DIR, `${userId}.json`);
 }
 
 // ── Server ───────────────────────────────────────────────────────────────────
@@ -232,6 +237,78 @@ Bun.serve({
         await mkdir(PREFS_DIR, { recursive: true });
         await Bun.write(prefsPath(user.id), JSON.stringify(data));
         return Response.json(data);
+      }
+
+      return new Response("Method not allowed", { status: 405 });
+    }
+
+    // ── Applications endpoints ───────────────────────────────────────────
+
+    if (
+      url.pathname === "/api/applications" ||
+      url.pathname.startsWith("/api/applications/")
+    ) {
+      let user: { id: number; username: string | null };
+      try {
+        user = await verifyToken(req.headers.get("authorization"));
+      } catch {
+        return Response.json({ error: "unauthorized" }, { status: 401 });
+      }
+
+      const VALID_STATUSES = [
+        "interested",
+        "applied",
+        "interviewing",
+        "offered",
+        "rejected",
+        "withdrawn",
+      ];
+
+      const jobId = url.pathname.slice("/api/applications/".length);
+
+      // GET /api/applications
+      if (url.pathname === "/api/applications" && req.method === "GET") {
+        const file = Bun.file(appsPath(user.id));
+        if (!(await file.exists())) {
+          return Response.json({ error: "No applications" }, { status: 404 });
+        }
+        return Response.json(await file.json());
+      }
+
+      // PUT /api/applications/:jobId
+      if (jobId && req.method === "PUT") {
+        const body = await req.json();
+        if (body.status && !VALID_STATUSES.includes(body.status)) {
+          return Response.json({ error: "Invalid status" }, { status: 400 });
+        }
+        await mkdir(APPS_DIR, { recursive: true });
+        const file = Bun.file(appsPath(user.id));
+        const apps: Record<string, any> = (await file.exists())
+          ? await file.json()
+          : {};
+        const existing = apps[jobId];
+        const now = new Date().toISOString();
+        apps[jobId] = {
+          status: body.status ?? existing?.status ?? "interested",
+          notes: body.notes ?? existing?.notes ?? "",
+          motivationLetter:
+            body.motivationLetter ?? existing?.motivationLetter ?? "",
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now,
+        };
+        await Bun.write(appsPath(user.id), JSON.stringify(apps));
+        return Response.json(apps[jobId]);
+      }
+
+      // DELETE /api/applications/:jobId
+      if (jobId && req.method === "DELETE") {
+        const file = Bun.file(appsPath(user.id));
+        if (await file.exists()) {
+          const apps: Record<string, any> = await file.json();
+          delete apps[jobId];
+          await Bun.write(appsPath(user.id), JSON.stringify(apps));
+        }
+        return Response.json({ ok: true });
       }
 
       return new Response("Method not allowed", { status: 405 });

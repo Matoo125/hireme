@@ -413,3 +413,113 @@ main {
   text-align: center;
   color: var(--muted);
 }
+
+/* ── Application tracker ──────────────────────────────────────────────── */
+
+.action-btn.track-btn.active {
+  background: #2d7d46;
+  border-color: #2d7d46;
+  color: white;
+}
+
+.job.is-tracked {
+  border-color: #2d7d46;
+}
+
+.app-panel {
+  border-top: 1px solid var(--border);
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+}
+
+.app-status-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.7rem;
+}
+
+.app-badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.app-badge--interested {
+  background: var(--chip-bg);
+  color: var(--chip-fg);
+}
+
+.app-badge--applied {
+  background: #1d4ed8;
+  color: white;
+}
+
+.app-badge--interviewing {
+  background: #7c3aed;
+  color: white;
+}
+
+.app-badge--offered {
+  background: #15803d;
+  color: white;
+}
+
+.app-badge--rejected {
+  background: #dc2626;
+  color: white;
+}
+
+.app-badge--withdrawn {
+  background: var(--muted);
+  color: var(--bg);
+}
+
+.app-status-select {
+  font-size: 0.82rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card-bg);
+  color: var(--fg);
+}
+
+.app-label {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+  margin-top: 0.5rem;
+}
+
+.app-textarea {
+  width: 100%;
+  font-family: inherit;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card-bg);
+  color: var(--fg);
+  resize: vertical;
+}
+
+.app-textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.app-textarea--letter {
+  min-height: 10rem;
+}
+
+.app-meta {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}

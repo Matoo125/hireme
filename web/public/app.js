@@ -234,6 +234,126 @@ function saveIdSet(key, set) {
 const likedJobs = loadIdSet(LIKED_KEY);
 const hiddenJobs = loadIdSet(HIDDEN_KEY);
 
+// ── Application tracker state ───────────────────────────────────────────────
+
+const APPS_KEY = "jobBoard.applications";
+const VALID_STATUSES = ["interested", "applied", "interviewing", "offered", "rejected", "withdrawn"];
+const STATUS_LABELS = {
+  interested: "Interested",
+  applied: "Applied",
+  interviewing: "Interviewing",
+  offered: "Offered",
+  rejected: "Rejected",
+  withdrawn: "Withdrawn",
+};
+
+function loadAppsFromStorage() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(APPS_KEY) || "{}");
+    return new Map(Object.entries(raw));
+  } catch {
+    return new Map();
+  }
+}
+
+function saveAppsToStorage() {
+  localStorage.setItem(APPS_KEY, JSON.stringify(Object.fromEntries(applications)));
+}
+
+const applications = loadAppsFromStorage();
+
+function debounce(fn, ms) {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), ms);
+  };
+}
+
+async function saveApplication(jobId, data) {
+  applications.set(jobId, data);
+  saveAppsToStorage();
+  if (!isLoggedIn()) return;
+  try {
+    const jwt = await getJwt();
+    fetch(`/api/applications/${encodeURIComponent(jobId)}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+    });
+  } catch {}
+}
+
+async function deleteApplication(jobId) {
+  applications.delete(jobId);
+  saveAppsToStorage();
+  if (!isLoggedIn()) return;
+  try {
+    const jwt = await getJwt();
+    fetch(`/api/applications/${encodeURIComponent(jobId)}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+  } catch {}
+}
+
+async function loadApplications() {
+  if (!isLoggedIn()) return;
+  try {
+    const jwt = await getJwt();
+    const res = await fetch("/api/applications", {
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      applications.clear();
+      for (const [id, entry] of Object.entries(data)) applications.set(id, entry);
+      saveAppsToStorage();
+      render();
+    } else if (res.status === 404 && applications.size) {
+      // Push local state up to the server
+      for (const [id, entry] of applications) {
+        const jwt2 = await getJwt();
+        fetch(`/api/applications/${encodeURIComponent(id)}`, {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${jwt2}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(entry),
+        });
+      }
+    }
+  } catch {}
+}
+
+function toggleTracked(jobId) {
+  if (applications.has(jobId)) {
+    deleteApplication(jobId);
+  } else {
+    const now = new Date().toISOString();
+    saveApplication(jobId, {
+      status: "interested",
+      notes: "",
+      motivationLetter: "",
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  render();
+}
+
+function updateApplication(jobId, field, value) {
+  const entry = applications.get(jobId);
+  if (!entry) return;
+  entry[field] = value;
+  entry.updatedAt = new Date().toISOString();
+  saveApplication(jobId, entry);
+}
+
 // Granular, global control over which detail sections cards show:
 // job board tags (source badges), salary, description, and topic tags.
 // Every card respects the same settings - there's no per-card override.
@@ -417,6 +537,8 @@ function matchesView(job, mode) {
       return likedJobs.has(job.id) && !hiddenJobs.has(job.id);
     case "hidden":
       return hiddenJobs.has(job.id);
+    case "tracked":
+      return applications.has(job.id);
     case "all":
     default:
       return !hiddenJobs.has(job.id);
@@ -582,7 +704,8 @@ function jobCard(job) {
   const el = document.createElement("article");
   const isLiked = likedJobs.has(job.id);
   const isHidden = hiddenJobs.has(job.id);
-  el.className = "job" + (isLiked ? " is-liked" : "") + (isHidden ? " is-hidden" : "");
+  const isTracked = applications.has(job.id);
+  el.className = "job" + (isLiked ? " is-liked" : "") + (isHidden ? " is-hidden" : "") + (isTracked ? " is-tracked" : "");
 
   const top = document.createElement("div");
   top.className = "job-top";
@@ -640,6 +763,15 @@ function jobCard(job) {
   hideBtn.addEventListener("click", () => toggleHidden(job.id));
   actions.appendChild(hideBtn);
 
+  if (isLoggedIn()) {
+    const trackBtn = document.createElement("button");
+    trackBtn.className = "action-btn track-btn" + (isTracked ? " active" : "");
+    trackBtn.textContent = isTracked ? "◉ Tracked" : "○ Track";
+    trackBtn.title = isTracked ? "Remove from tracked" : "Track this application";
+    trackBtn.addEventListener("click", () => toggleTracked(job.id));
+    actions.appendChild(trackBtn);
+  }
+
   const rightCol = document.createElement("div");
   rightCol.className = "job-top-right";
   rightCol.appendChild(meta);
@@ -669,7 +801,7 @@ function jobCard(job) {
   if (hasHiddenContent) {
     el.classList.add("expandable");
     el.addEventListener("click", (e) => {
-      if (e.target.closest("a, button")) return;
+      if (e.target.closest("a, button, select, textarea, .app-panel")) return;
       cardExpanded = !cardExpanded;
       el.classList.toggle("card-expanded", cardExpanded);
       for (const key of DETAIL_KEYS) {
@@ -687,14 +819,88 @@ function jobCard(job) {
     });
   }
 
+  if (isTracked && viewEl.value === "tracked") {
+    const appData = applications.get(job.id);
+    const panel = document.createElement("div");
+    panel.className = "app-panel";
+
+    // Status row: badge + select
+    const statusRow = document.createElement("div");
+    statusRow.className = "app-status-row";
+
+    const badge = document.createElement("span");
+    badge.className = `app-badge app-badge--${appData.status}`;
+    badge.textContent = STATUS_LABELS[appData.status] || appData.status;
+    statusRow.appendChild(badge);
+
+    const statusSelect = document.createElement("select");
+    statusSelect.className = "app-status-select";
+    for (const s of VALID_STATUSES) {
+      const opt = document.createElement("option");
+      opt.value = s;
+      opt.textContent = STATUS_LABELS[s];
+      if (s === appData.status) opt.selected = true;
+      statusSelect.appendChild(opt);
+    }
+    statusSelect.addEventListener("change", () => {
+      updateApplication(job.id, "status", statusSelect.value);
+      badge.className = `app-badge app-badge--${statusSelect.value}`;
+      badge.textContent = STATUS_LABELS[statusSelect.value];
+    });
+    statusRow.appendChild(statusSelect);
+    panel.appendChild(statusRow);
+
+    // Notes
+    const notesLabel = document.createElement("label");
+    notesLabel.className = "app-label";
+    notesLabel.textContent = "Notes";
+    panel.appendChild(notesLabel);
+
+    const notesArea = document.createElement("textarea");
+    notesArea.className = "app-textarea";
+    notesArea.rows = 3;
+    notesArea.value = appData.notes || "";
+    notesArea.placeholder = "Add notes about this application…";
+    const debouncedNotes = debounce((val) => updateApplication(job.id, "notes", val), 500);
+    notesArea.addEventListener("input", () => debouncedNotes(notesArea.value));
+    panel.appendChild(notesArea);
+
+    // Motivation letter
+    const letterLabel = document.createElement("label");
+    letterLabel.className = "app-label";
+    letterLabel.textContent = "Motivation letter";
+    panel.appendChild(letterLabel);
+
+    const letterArea = document.createElement("textarea");
+    letterArea.className = "app-textarea app-textarea--letter";
+    letterArea.rows = 8;
+    letterArea.value = appData.motivationLetter || "";
+    letterArea.placeholder = "Draft your motivation letter…";
+    const debouncedLetter = debounce((val) => updateApplication(job.id, "motivationLetter", val), 500);
+    letterArea.addEventListener("input", () => debouncedLetter(letterArea.value));
+    panel.appendChild(letterArea);
+
+    // Tracked-since timestamp
+    if (appData.createdAt) {
+      const meta = document.createElement("p");
+      meta.className = "app-meta";
+      meta.textContent = `Tracked since ${new Date(appData.createdAt).toLocaleDateString()}`;
+      panel.appendChild(meta);
+    }
+
+    el.appendChild(panel);
+  }
+
   return el;
 }
 
 function renderViewOptions() {
   const likedCount = jobs.filter((j) => likedJobs.has(j.id) && !hiddenJobs.has(j.id)).length;
   const hiddenCount = jobs.filter((j) => hiddenJobs.has(j.id)).length;
+  const trackedCount = jobs.filter((j) => applications.has(j.id)).length;
   viewEl.options[1].textContent = `Liked (${likedCount})`;
   viewEl.options[2].textContent = `Not relevant (${hiddenCount})`;
+  viewEl.options[3].textContent = `Tracked (${trackedCount})`;
 }
 
 function updateDescriptionToggles() {
@@ -740,6 +946,7 @@ async function init() {
   jobs = await res.json();
   render();
   loadPreferences();
+  loadApplications();
 }
 
 searchEl.addEventListener("input", render);
