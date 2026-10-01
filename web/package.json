@@ -5,6 +5,7 @@
     "start": "bun run server.ts"
   },
   "dependencies": {
+    "@research/editor": "workspace:*",
     "jose": "^6.2.12"
   }
 }

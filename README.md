@@ -21,7 +21,7 @@ scrape_jobs.py     orchestrates all scrapers, dedupes, writes jobs.csv
 jobs.csv           output of the last scrape run (committed as a snapshot)
 web/
   server.ts        Bun server: serves web/public/ and GET /api/jobs (reads jobs.csv)
-  public/          plain HTML/CSS/JS frontend, no build step
+  public/          plain HTML/CSS/JS frontend, no build step (but see the editor below)
 ```
 
 ## Running the scraper
@@ -65,7 +65,12 @@ Serves on `http://localhost:4020` by default. Override with:
 - `JOBS_CSV=/path/to/file.csv` - point at a different CSV (defaults to `../jobs.csv`)
 
 The server re-reads `jobs.csv` and the static files from disk on every
-request, so there's no build/restart step - edit and refresh.
+request, so there's no build/restart step - edit and refresh. The one
+exception is the notes and motivation-letter editor (`@research/editor`,
+the shared package in `../../editor`, also used by bookmarks): the server
+bundles it once at startup and serves it at `/editor.js` and `/editor.css`,
+so a change to the editor needs a restart. If the bundle fails, the fields
+are plain textareas.
 
 ### Frontend features
 

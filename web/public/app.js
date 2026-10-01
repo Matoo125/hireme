@@ -262,12 +262,73 @@ function saveAppsToStorage() {
 
 const applications = loadAppsFromStorage();
 
-function debounce(fn, ms) {
-  let timer;
-  return (...args) => {
+// ── Rich-text notes and letters ──────────────────────────────────────────────
+//
+// An application's notes and motivation letter are Markdown, edited in the
+// editor shared with bookmarks (@research/editor), which the server bundles
+// and serves at /editor.js. It's fetched the first time a tracked card shows;
+// until it arrives — or if it can't — the plain textarea works on its own and
+// saves the same text.
+
+const NOTES_TOOLBAR = "compact";
+const LETTER_TOOLBAR = [
+  "Bold", "Italic", "Strikethrough", "Link", "Heading", "Subheading",
+  "Bulleted list", "Numbered list", "Quote", "Undo", "Redo",
+];
+
+let editorModule = null;
+function loadEditor() {
+  editorModule ??= import("/editor.js").catch((err) => {
+    console.warn("Rich-text editor unavailable, using plain text:", err);
+    return null;
+  });
+  return editorModule;
+}
+
+/** Fields with an edit in flight; render() saves and closes them before rebuilding the cards. */
+const liveFields = new Set();
+
+function closeLiveFields() {
+  for (const field of [...liveFields]) field.close();
+}
+
+/**
+ * Autosave a notes or letter textarea into the application, and upgrade it to
+ * the editor once that has loaded. Saves 500ms after the last edit, reading
+ * the text then rather than on every keystroke.
+ */
+function attachTextField(textarea, jobId, key, toolbar) {
+  let editor = null;
+  let dirty = false;
+  let timer = null;
+  const save = () => {
     clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), ms);
+    if (!dirty) return;
+    dirty = false;
+    updateApplication(jobId, key, editor ? editor.getData() : textarea.value);
   };
+  const changed = () => {
+    dirty = true;
+    clearTimeout(timer);
+    timer = setTimeout(save, 500);
+  };
+  const field = {
+    close() {
+      save();
+      editor?.destroy();
+      liveFields.delete(field);
+    },
+  };
+  liveFields.add(field);
+  textarea.addEventListener("input", changed);
+
+  loadEditor().then(async (module) => {
+    if (!module || !liveFields.has(field)) return;
+    const created = await module.createNoteEditor(textarea, changed, { toolbar });
+    // The card was rebuilt while the editor loaded.
+    if (!liveFields.has(field)) return void created.destroy();
+    editor = created;
+  }).catch((err) => console.warn("Rich-text editor unavailable, using plain text:", err));
 }
 
 async function saveApplication(jobId, data) {
@@ -861,9 +922,9 @@ function jobCard(job) {
     notesArea.rows = 3;
     notesArea.value = appData.notes || "";
     notesArea.placeholder = "Add notes about this application…";
-    const debouncedNotes = debounce((val) => updateApplication(job.id, "notes", val), 500);
-    notesArea.addEventListener("input", () => debouncedNotes(notesArea.value));
+    notesArea.setAttribute("aria-label", "Notes");
     panel.appendChild(notesArea);
+    attachTextField(notesArea, job.id, "notes", NOTES_TOOLBAR);
 
     // Motivation letter
     const letterLabel = document.createElement("label");
@@ -876,9 +937,9 @@ function jobCard(job) {
     letterArea.rows = 8;
     letterArea.value = appData.motivationLetter || "";
     letterArea.placeholder = "Draft your motivation letter…";
-    const debouncedLetter = debounce((val) => updateApplication(job.id, "motivationLetter", val), 500);
-    letterArea.addEventListener("input", () => debouncedLetter(letterArea.value));
+    letterArea.setAttribute("aria-label", "Motivation letter");
     panel.appendChild(letterArea);
+    attachTextField(letterArea, job.id, "motivationLetter", LETTER_TOOLBAR);
 
     // Tracked-since timestamp
     if (appData.createdAt) {
@@ -931,6 +992,8 @@ function render() {
   renderActiveTags();
   renderViewOptions();
   countEl.textContent = `${sorted.length} job${sorted.length === 1 ? "" : "s"}`;
+  // The cards are rebuilt from scratch: save what's being typed first.
+  closeLiveFields();
   jobsEl.innerHTML = "";
   emptyEl.hidden = sorted.length > 0;
   for (const job of sorted) {

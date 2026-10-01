@@ -518,6 +518,36 @@ main {
   min-height: 10rem;
 }
 
+/* Notes and the letter in the rich-text editor (/editor.css), in our palette,
+   following the dark scheme with it. The textarea it replaces stays in the DOM,
+   hidden, just before it. */
+:root {
+  --editor-bg: var(--card-bg);
+  --editor-fg: var(--fg);
+  --editor-muted: var(--muted);
+  --editor-rule: var(--border);
+  --editor-accent: var(--accent);
+}
+
+.app-panel .note-editor {
+  border-radius: 6px;
+  font-size: 0.88rem;
+
+  &:focus-within { outline: 2px solid var(--accent); outline-offset: -1px; }
+}
+
+.app-panel .note-tool { font-size: 0.78rem; }
+
+.app-panel .note-editor-content .ProseMirror {
+  min-height: 4.5em;
+  font-size: 1em;
+  line-height: 1.45;
+}
+
+.app-textarea--letter + .note-editor .note-editor-content .ProseMirror {
+  min-height: 10rem;
+}
+
 .app-meta {
   margin: 0.5rem 0 0;
   font-size: 0.75rem;

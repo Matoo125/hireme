@@ -122,6 +122,60 @@ function appsPath(userId: number): string {
   return path.join(APPS_DIR, `${userId}.json`);
 }
 
+// ── Editor bundle ────────────────────────────────────────────────────────────
+//
+// The notes and motivation-letter editor (@research/editor, shared with
+// bookmarks) is bundled here, once at startup, rather than by a build step:
+// the rest of the frontend is plain files served as they are, and a deploy
+// only restarts this process. Served gzipped (Caddy doesn't compress this
+// site) with an ETag, so a browser downloads it once per deploy. If the
+// bundle fails, the page keeps its plain textareas.
+
+interface Asset {
+  body: Uint8Array;
+  gzip: Uint8Array;
+  etag: string;
+  type: string;
+}
+
+async function buildEditorAssets(): Promise<Map<string, Asset>> {
+  const result = await Bun.build({
+    entrypoints: [Bun.resolveSync("@research/editor", ROOT)],
+    target: "browser",
+    format: "esm",
+    minify: true,
+  });
+  if (!result.success) throw new AggregateError(result.logs, "editor bundle failed");
+  const css = Bun.file(Bun.resolveSync("@research/editor/editor.css", ROOT));
+  const files: [string, Uint8Array, string][] = [
+    ["/editor.js", new Uint8Array(await result.outputs[0]!.arrayBuffer()), "text/javascript; charset=utf-8"],
+    ["/editor.css", new Uint8Array(await css.arrayBuffer()), "text/css; charset=utf-8"],
+  ];
+  return new Map(files.map(([name, body, type]) => [
+    name,
+    { body, gzip: Bun.gzipSync(body), etag: `"${Bun.hash(body).toString(36)}"`, type },
+  ]));
+}
+
+const editorAssets = buildEditorAssets().catch((err) => {
+  console.error("Could not bundle the editor; notes stay plain textareas:", err);
+  return new Map<string, Asset>();
+});
+
+function serveAsset(req: Request, asset: Asset): Response {
+  const headers: Record<string, string> = {
+    "Content-Type": asset.type,
+    ETag: asset.etag,
+    "Cache-Control": "no-cache",
+    Vary: "Accept-Encoding",
+  };
+  if (req.headers.get("if-none-match") === asset.etag) return new Response(null, { status: 304, headers });
+  if (/\bgzip\b/.test(req.headers.get("accept-encoding") ?? "")) {
+    return new Response(asset.gzip, { headers: { ...headers, "Content-Encoding": "gzip" } });
+  }
+  return new Response(asset.body, { headers });
+}
+
 // ── Server ───────────────────────────────────────────────────────────────────
 
 Bun.serve({
@@ -312,6 +366,12 @@ Bun.serve({
       }
 
       return new Response("Method not allowed", { status: 405 });
+    }
+
+    // ── Editor bundle ──────────────────────────────────────────────────────
+    if (url.pathname === "/editor.js" || url.pathname === "/editor.css") {
+      const asset = (await editorAssets).get(url.pathname);
+      return asset ? serveAsset(req, asset) : new Response("Editor unavailable", { status: 503 });
     }
 
     // ── Static files ───────────────────────────────────────────────────────
