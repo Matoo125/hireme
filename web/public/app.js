@@ -364,22 +364,6 @@ async function deleteApplication(jobId) {
   } catch {}
 }
 
-function injectCustomJobs() {
-  for (const [id, entry] of applications) {
-    if (entry.isCustom && !jobs.some(j => j.id === id)) {
-      jobs.push({
-        id: id,
-        title: entry.title || "Custom Job",
-        organization_name: entry.organization_name || "",
-        link: entry.link || id,
-        source: "Custom",
-        tags: "",
-        publication_date: entry.createdAt ? entry.createdAt.slice(0, 10) : "",
-      });
-    }
-  }
-}
-
 async function loadApplications() {
   if (!isLoggedIn()) return;
   try {
@@ -392,7 +376,6 @@ async function loadApplications() {
       applications.clear();
       for (const [id, entry] of Object.entries(data)) applications.set(id, entry);
       saveAppsToStorage();
-      injectCustomJobs();
       render();
     } else if (res.status === 404 && applications.size) {
       // Push local state up to the server
@@ -409,38 +392,6 @@ async function loadApplications() {
       }
     }
   } catch {}
-}
-
-function addCustomJob() {
-  const link = prompt("Enter job URL:");
-  if (!link) return;
-  
-  const id = "custom-" + encodeURIComponent(link);
-  
-  if (applications.has(id)) {
-     alert("You are already tracking this custom job.");
-     return;
-  }
-  
-  const title = prompt("Enter job title:") || "Custom Role";
-  const organization = prompt("Enter organization:") || "Custom Org";
-  
-  const now = new Date().toISOString();
-  const entry = {
-    status: "interested",
-    notes: "",
-    motivationLetter: "",
-    createdAt: now,
-    updatedAt: now,
-    isCustom: true,
-    title: title,
-    organization_name: organization,
-    link: link,
-  };
-  
-  saveApplication(id, entry);
-  injectCustomJobs();
-  render();
 }
 
 function toggleTracked(jobId) {
@@ -1141,7 +1092,6 @@ async function init() {
   countEl.textContent = "Loading…";
   const res = await fetch("/api/jobs");
   jobs = await res.json();
-  injectCustomJobs();
   render();
   loadPreferences();
   loadApplications();
@@ -1151,6 +1101,5 @@ async function init() {
 searchEl.addEventListener("input", render);
 sortEl.addEventListener("change", render);
 viewEl.addEventListener("change", render);
-document.getElementById("addCustomJobBtn").addEventListener("click", addCustomJob);
 
 init();
