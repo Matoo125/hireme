@@ -349,6 +349,10 @@ Bun.serve({
             body.motivationLetter ?? existing?.motivationLetter ?? "",
           createdAt: existing?.createdAt ?? now,
           updatedAt: now,
+          isCustom: body.isCustom ?? existing?.isCustom ?? false,
+          title: body.title ?? existing?.title ?? "",
+          organization_name: body.organization_name ?? existing?.organization_name ?? "",
+          link: body.link ?? existing?.link ?? "",
         };
         await Bun.write(appsPath(user.id), JSON.stringify(apps));
         return Response.json(apps[jobId]);
