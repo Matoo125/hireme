@@ -39,6 +39,15 @@
       <p id="cvStatus" class="cv-status" hidden></p>
     </div>
 
+    <div id="addJobSection" class="cv-section" hidden>
+      <form id="addJobForm" class="add-job-form">
+        <input id="addJobLink" type="url" placeholder="Paste a job link…" required />
+        <input id="addJobTitle" type="text" placeholder="Title (optional, auto-detected if left blank)" />
+        <button type="submit" class="auth-btn auth-btn--small">Add job</button>
+      </form>
+      <p id="addJobStatus" class="cv-status" hidden></p>
+    </div>
+
     <div class="controls">
       <input id="search" type="search" placeholder="Search title, org, tags…" autofocus />
       <select id="sort">

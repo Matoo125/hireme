@@ -4,6 +4,7 @@
 import path from "path";
 import { mkdir, unlink } from "fs/promises";
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import { fetchPage, FetchError } from "../../api/lib/fetch-page";
 
 const PORT = Number(process.env.PORT ?? 4020);
 const ROOT = import.meta.dir;
@@ -12,6 +13,7 @@ const CSV_PATH = process.env.JOBS_CSV ?? path.join(ROOT, "..", "jobs.csv");
 const CV_DIR = path.join(ROOT, "..", "data", "cv");
 const PREFS_DIR = path.join(ROOT, "..", "data", "preferences");
 const APPS_DIR = path.join(ROOT, "..", "data", "applications");
+const CUSTOM_JOBS_DIR = path.join(ROOT, "..", "data", "custom-jobs");
 
 const MAX_CV_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -120,6 +122,59 @@ function prefsPath(userId: number): string {
 
 function appsPath(userId: number): string {
   return path.join(APPS_DIR, `${userId}.json`);
+}
+
+// ── Custom (user-added) jobs ─────────────────────────────────────────────────
+
+interface CustomJob {
+  id: string;
+  source: string;
+  title: string;
+  link: string;
+  publication_date: string;
+  close_date: string;
+  organization_name: string;
+  organization_url: string;
+  organization_description: string;
+  description: string;
+  salary_range: string;
+  tags: string;
+}
+
+function customJobsPath(userId: number): string {
+  return path.join(CUSTOM_JOBS_DIR, `${userId}.json`);
+}
+
+async function readCustomJobs(userId: number): Promise<CustomJob[]> {
+  const file = Bun.file(customJobsPath(userId));
+  if (!(await file.exists())) return [];
+  return file.json();
+}
+
+async function writeCustomJobs(userId: number, jobs: CustomJob[]): Promise<void> {
+  await mkdir(CUSTOM_JOBS_DIR, { recursive: true });
+  await Bun.write(customJobsPath(userId), JSON.stringify(jobs));
+}
+
+// Strips query/UTM params and a trailing slash, mirroring scrapers/dedupe.py's
+// link normalization, so re-adding the same posting (with a different
+// tracking suffix) resolves to the same stable id instead of a duplicate row.
+function normalizeLink(link: string): string {
+  const url = new URL(link);
+  return `${url.origin}${url.pathname}`.replace(/\/+$/, "");
+}
+
+function customJobId(normalizedLink: string): string {
+  return `custom-${Bun.hash(normalizedLink).toString(36)}`;
+}
+
+function extractTitle(html: string): string | null {
+  const og = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']*)["']/i)
+    ?? html.match(/<meta[^>]+content=["']([^"']*)["'][^>]+property=["']og:title["']/i);
+  if (og?.[1]) return og[1].trim();
+  const title = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+  if (title?.[1]) return title[1].trim();
+  return null;
 }
 
 // ── Editor bundle ────────────────────────────────────────────────────────────
@@ -366,6 +421,89 @@ Bun.serve({
           delete apps[jobId];
           await Bun.write(appsPath(user.id), JSON.stringify(apps));
         }
+        return Response.json({ ok: true });
+      }
+
+      return new Response("Method not allowed", { status: 405 });
+    }
+
+    // ── Custom (user-added) jobs ─────────────────────────────────────────
+
+    if (
+      url.pathname === "/api/custom-jobs" ||
+      url.pathname.startsWith("/api/custom-jobs/")
+    ) {
+      let user: { id: number; username: string | null };
+      try {
+        user = await verifyToken(req.headers.get("authorization"));
+      } catch {
+        return Response.json({ error: "unauthorized" }, { status: 401 });
+      }
+
+      // GET /api/custom-jobs
+      if (url.pathname === "/api/custom-jobs" && req.method === "GET") {
+        return Response.json(await readCustomJobs(user.id));
+      }
+
+      // POST /api/custom-jobs — add by link
+      if (url.pathname === "/api/custom-jobs" && req.method === "POST") {
+        const body = await req.json().catch(() => ({}));
+        const rawLink = typeof body.link === "string" ? body.link.trim() : "";
+
+        let normalized: string;
+        try {
+          const parsed = new URL(rawLink);
+          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+            throw new Error("not http(s)");
+          }
+          normalized = normalizeLink(rawLink);
+        } catch {
+          return Response.json({ error: "Invalid URL" }, { status: 400 });
+        }
+
+        const jobs = await readCustomJobs(user.id);
+        const id = customJobId(normalized);
+        const existing = jobs.find((j) => j.id === id);
+        if (existing) return Response.json(existing);
+
+        let title = typeof body.title === "string" ? body.title.trim() : "";
+        if (!title) {
+          try {
+            const { html } = await fetchPage(rawLink, { timeoutMs: 8000 });
+            title = extractTitle(html) ?? "";
+          } catch (err) {
+            // Fetching/parsing the page is best-effort: a slow, blocked, or
+            // non-HTML page shouldn't stop the user from adding the link.
+            console.error(`Could not fetch title for ${rawLink}:`, err instanceof FetchError ? err.message : err);
+          }
+        }
+        if (!title) title = new URL(normalized).hostname;
+
+        const job: CustomJob = {
+          id,
+          source: "custom",
+          title,
+          link: rawLink,
+          publication_date: new Date().toISOString().slice(0, 10),
+          close_date: "",
+          organization_name: typeof body.organization_name === "string" ? body.organization_name.trim() : "",
+          organization_url: "",
+          organization_description: "",
+          description: "",
+          salary_range: "",
+          tags: "",
+        };
+        jobs.push(job);
+        await writeCustomJobs(user.id, jobs);
+        return Response.json(job, { status: 201 });
+      }
+
+      // DELETE /api/custom-jobs/:id
+      if (req.method === "DELETE") {
+        const id = url.pathname.slice("/api/custom-jobs/".length);
+        const jobs = await readCustomJobs(user.id);
+        const next = jobs.filter((j) => j.id !== id);
+        await writeCustomJobs(user.id, next);
         return Response.json({ ok: true });
       }
 

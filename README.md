@@ -83,6 +83,13 @@ are plain textareas.
   and is wiped if you clear site data. It survives re-scrapes because
   each job gets a stable `id` (hashed from its normalized link, or
   org+title as a fallback) computed in `scrapers/dedupe.py`.
+- **Add a job by link** (logged in only): paste a URL and the server
+  fetches it to fill in a title (`og:title`/`<title>`, falling back to
+  the hostname if fetching fails), then stores it per-user in
+  `data/custom-jobs/<userId>.json` - separate from `jobs.csv`, so it
+  isn't wiped by the next scrape. Merged into the job list client-side
+  with `source: "custom"`, so it likes/tracks/filters like any other
+  listing, plus a "Remove" action scraped jobs don't have.
 
 ## Adding another job board
 

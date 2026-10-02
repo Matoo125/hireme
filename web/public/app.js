@@ -71,17 +71,20 @@ function updateAuthUI() {
   const userInfo = document.getElementById("userInfo");
   const userName = document.getElementById("userName");
   const cvSection = document.getElementById("cvSection");
+  const addJobSection = document.getElementById("addJobSection");
 
   if (isLoggedIn()) {
     loginBtn.hidden = true;
     userInfo.hidden = false;
     userName.textContent = getUser() || "User";
     cvSection.hidden = false;
+    addJobSection.hidden = false;
     loadCvInfo();
   } else {
     loginBtn.hidden = false;
     userInfo.hidden = true;
     cvSection.hidden = true;
+    addJobSection.hidden = true;
   }
 }
 
@@ -463,6 +466,79 @@ function updateApplication(jobId, field, value) {
   entry.updatedAt = new Date().toISOString();
   saveApplication(jobId, entry);
 }
+
+// ── Custom (user-added) jobs ─────────────────────────────────────────────────
+//
+// Logged-in users can add a job by pasting its link. The server fetches the
+// page to fill in a title (falling back to the hostname), stores it per-user
+// (so it survives the next scrape overwriting jobs.csv), and we merge it into
+// `jobs` client-side so it sorts/filters/likes/tracks like any other listing.
+
+async function loadCustomJobs() {
+  if (!isLoggedIn()) return;
+  try {
+    const jwt = await getJwt();
+    const res = await fetch("/api/custom-jobs", {
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+    if (!res.ok) return;
+    const customJobs = await res.json();
+    jobs = [...jobs.filter((j) => j.source !== "custom"), ...customJobs];
+    render();
+  } catch {}
+}
+
+async function addCustomJob(link, title) {
+  const jwt = await getJwt();
+  const res = await fetch("/api/custom-jobs", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${jwt}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ link, title }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Could not add that link");
+  if (!jobs.some((j) => j.id === data.id)) jobs = [...jobs, data];
+  render();
+}
+
+async function removeCustomJob(jobId) {
+  jobs = jobs.filter((j) => j.id !== jobId);
+  render();
+  try {
+    const jwt = await getJwt();
+    await fetch(`/api/custom-jobs/${encodeURIComponent(jobId)}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+  } catch {}
+}
+
+const addJobForm = document.getElementById("addJobForm");
+const addJobLinkEl = document.getElementById("addJobLink");
+const addJobTitleEl = document.getElementById("addJobTitle");
+const addJobStatusEl = document.getElementById("addJobStatus");
+
+addJobForm?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const link = addJobLinkEl.value.trim();
+  if (!link) return;
+  const submitBtn = addJobForm.querySelector("button");
+  submitBtn.disabled = true;
+  addJobStatusEl.hidden = true;
+  try {
+    await addCustomJob(link, addJobTitleEl.value.trim());
+    addJobForm.reset();
+  } catch (err) {
+    addJobStatusEl.textContent = err.message || "Could not add that link";
+    addJobStatusEl.className = "cv-status cv-status--error";
+    addJobStatusEl.hidden = false;
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
 
 // Granular, global control over which detail sections cards show:
 // job board tags (source badges), salary, description, and topic tags.
@@ -882,6 +958,15 @@ function jobCard(job) {
     actions.appendChild(trackBtn);
   }
 
+  if (job.source === "custom") {
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "action-btn remove-btn";
+    removeBtn.textContent = "🗑 Remove";
+    removeBtn.title = "Remove this job you added";
+    removeBtn.addEventListener("click", () => removeCustomJob(job.id));
+    actions.appendChild(removeBtn);
+  }
+
   const rightCol = document.createElement("div");
   rightCol.className = "job-top-right";
   rightCol.appendChild(meta);
@@ -1060,6 +1145,7 @@ async function init() {
   render();
   loadPreferences();
   loadApplications();
+  loadCustomJobs();
 }
 
 searchEl.addEventListener("input", render);

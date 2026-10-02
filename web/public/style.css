@@ -407,6 +407,32 @@ main {
   color: #c44;
 }
 
+/* ── Add job by link ──────────────────────────────────────────────────── */
+
+.add-job-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.add-job-form input[type="url"] {
+  flex: 2 1 240px;
+}
+
+.add-job-form input[type="text"] {
+  flex: 1 1 200px;
+}
+
+.add-job-form input {
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
 .empty {
   max-width: 720px;
   margin: 2rem auto;

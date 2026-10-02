@@ -50,6 +50,23 @@ description, salary_range, tags
 Per-user like/not-relevant state lives only in browser `localStorage` on the client — never sent
 to the server, doesn't sync across devices, wiped on clearing site data.
 
+Logged-in users (auth via `api.altfresh.sk`, a bearer JWT verified against its JWKS — see §5) get
+server-persisted per-user data under `hireme/data/`, one JSON file per user id, created on first
+write: `cv/<id>.json`+`.pdf` (uploaded CV), `preferences/<id>.json` (liked/hidden, synced up from
+`localStorage`), `applications/<id>.json` (tracked jobs: status, notes, motivation letter), and
+`custom-jobs/<id>.json` (jobs added by link — see below). None of this is checked into git or
+touched by the scrape; it's entirely separate from `jobs.csv`.
+
+**Custom (user-added) jobs**: a logged-in user can paste a job link and the server fetches it
+(via the shared `api/lib/fetch-page.ts`, SSRF-guarded) to fill in a title from `og:title`/`<title>`,
+falling back to the link's hostname if the fetch fails or the title can't be found. Stored as a
+`CustomJob` (same shape as a CSV row) with `id: "custom-" + Bun.hash(normalizedLink)`,
+`source: "custom"`, keyed by the same link-normalization rule as §4's dedup so re-adding a link
+(with a different tracking suffix) returns the existing entry instead of duplicating it. The
+frontend merges these into the in-memory `jobs` array client-side — they sort/filter/like/track
+like any scraped job, plus a "Remove" action (`DELETE /api/custom-jobs/:id`) scraped jobs don't
+have.
+
 ## 4. Scraping
 
 `scrape_jobs.py` runs each board's `fetch_jobs()` (imported from `scrapers/`), concatenates
@@ -79,10 +96,19 @@ copy from: Algolia-backed (`eighty_thousand_hours.py`), SSR-embedded JSON
 | Method | Path | Response |
 |---|---|---|
 | GET | `/api/jobs` | 200, full `jobs.csv` as JSON array of objects (all columns as strings); 500 `{error}` if the CSV can't be read |
+| GET/POST/DELETE | `/api/cv`, `/api/cv/file` | CV upload/download/delete (PDF, 10 MB max). Auth required. |
+| GET/PUT | `/api/preferences` | Liked/hidden id sets. Auth required. |
+| GET, PUT/DELETE `/:jobId` | `/api/applications` | Tracked-application status/notes/letter per job. Auth required. |
+| GET | `/api/custom-jobs` | 200, this user's custom jobs as a JSON array. Auth required. |
+| POST | `/api/custom-jobs` | Body `{link, title?, organization_name?}` → fetches the link for a title if omitted, 201 with the created `CustomJob` (or 200 with the existing one if the normalized link was already added); 400 on an invalid/non-http(s) URL. Auth required. |
+| DELETE | `/api/custom-jobs/:id` | Removes one custom job. Auth required. |
 | GET | `/*` | Static file from `web/public/`, `/` → `index.html`, 404 otherwise |
 
-No auth — read-only, single tenant, no write endpoints. CSV is re-read from disk on every
-`/api/jobs` request (no caching), so a fresh scrape is visible without restarting the server.
+`/api/jobs` and static files are unauthenticated and read-only. Every other endpoint requires a
+bearer JWT (`Authorization: Bearer <jwt>`), minted by `api.altfresh.sk` and verified against its
+JWKS (`verifyToken` in `server.ts`) — this spec's older "no auth, single tenant" framing predates
+that and is stale; §8 is corrected to match. `jobs.csv` is re-read from disk on every `/api/jobs`
+request (no caching), so a fresh scrape is visible without restarting the server.
 
 Frontend (`public/app.js`): client-side search, sort (newest/oldest/closing soon/org), filter by
 tag or source board, and the like/not-relevant triage state described in §3.
@@ -116,8 +142,9 @@ tag or source board, and the like/not-relevant triage state described in §3.
 - Automated relevance triage / description reading (see §1 divergence note).
 - Any board beyond the four listed in §1 — Profesia specifically is mentioned in
   `instructions.txt` but not implemented.
-- Multi-user support, accounts, or server-persisted triage state.
 - Real-time/on-demand scraping (only the daily timer).
+- Automated metadata beyond a best-effort title fetch for custom jobs — no description/org/salary
+  scraping for user-added links, unlike the board scrapers in §4.
 
 ## 9. Shared infra candidates (cross-project)
 
