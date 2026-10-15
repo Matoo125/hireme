@@ -67,7 +67,7 @@ Serves on `http://localhost:4020` by default. Override with:
 The server re-reads `jobs.csv` and the static files from disk on every
 request, so there's no build/restart step - edit and refresh. The one
 exception is the notes and motivation-letter editor (`@research/editor`,
-the shared package in `../../editor`, also used by bookmarks): the server
+the shared package from `github.com/Matoo125/editor`, also used by bookmarks and lang): the server
 bundles it once at startup and serves it at `/editor.js` and `/editor.css`,
 so a change to the editor needs a restart. If the bundle fails, the fields
 are plain textareas.

@@ -9,27 +9,27 @@ Scrapes remote/global job listings from EA-adjacent job boards into one deduplic
 through a minimal read-only web app for browsing, filtering, and personal triage (like / not
 relevant).
 
-**Divergence from original intent**: `instructions.txt` (repo-root notes, not implemented)
+**Divergence from original intent**: the original intent notes (never part of this repo, not implemented)
 describes a richer version of this — job descriptions read and triaged automatically ("decide
 whether it should be added to our database"), PostgreSQL storage, and Profesia as a covered board.
 None of that exists yet. The implemented system is simpler: static scrape → CSV → manual
-like/hide in the browser. Treat `instructions.txt` as backlog/intent, not spec — this file
+like/hide in the browser. Treat those notes as backlog/intent, not spec — this file
 documents what's actually running.
 
 ## 2. Components
 
 | Component | Path | Runtime |
 |---|---|---|
-| Scrapers | `hireme/scrapers/*.py` | Python 3 + `requests`, one module per board |
-| Orchestrator | `hireme/scrape_jobs.py` | Runs all scrapers, dedupes, writes `jobs.csv` |
-| Web app | `hireme/web/server.ts` + `hireme/web/public/` | Bun server, static files + one JSON endpoint |
-| Deploy | `server-config/systemd/hireme.service`, `hireme-scrape.{service,timer}` | systemd, reverse-proxied by Caddy |
+| Scrapers | `scrapers/*.py` | Python 3 + `requests`, one module per board |
+| Orchestrator | `scrape_jobs.py` | Runs all scrapers, dedupes, writes `jobs.csv` |
+| Web app | `web/server.ts` + `web/public/` | Bun server, static files + one JSON endpoint |
+| Deploy | `hireme.service`, `hireme-scrape.{service,timer}` (systemd units on the VPS) | systemd, reverse-proxied by Caddy |
 
 Production URL: `hireme.sk` → `reverse_proxy localhost:4020` (`www.hireme.sk` redirects to it).
 
 ## 3. Data model
 
-No database. `hireme/jobs.csv` is the entire persistence layer — a flat file, checked into git as
+No database. `jobs.csv` is the entire persistence layer — a flat file, checked into git as
 a point-in-time snapshot, overwritten by each scrape run. Columns (`scrapers/common.py:FIELDNAMES`):
 
 ```
@@ -51,14 +51,14 @@ Per-user like/not-relevant state lives only in browser `localStorage` on the cli
 to the server, doesn't sync across devices, wiped on clearing site data.
 
 Logged-in users (auth via `api.altfresh.sk`, a bearer JWT verified against its JWKS — see §5) get
-server-persisted per-user data under `hireme/data/`, one JSON file per user id, created on first
+server-persisted per-user data under `data/`, one JSON file per user id, created on first
 write: `cv/<id>.json`+`.pdf` (uploaded CV), `preferences/<id>.json` (liked/hidden, synced up from
 `localStorage`), `applications/<id>.json` (tracked jobs: status, notes, motivation letter), and
 `custom-jobs/<id>.json` (jobs added by link — see below). None of this is checked into git or
 touched by the scrape; it's entirely separate from `jobs.csv`.
 
 **Custom (user-added) jobs**: a logged-in user can paste a job link and the server fetches it
-(via the shared `api/lib/fetch-page.ts`, SSRF-guarded) to fill in a title from `og:title`/`<title>`,
+(via `web/lib/fetch-page.ts`, SSRF-guarded) to fill in a title from `og:title`/`<title>`,
 falling back to the link's hostname if the fetch fails or the title can't be found. Stored as a
 `CustomJob` (same shape as a CSV row) with `id: "custom-" + Bun.hash(normalizedLink)`,
 `source: "custom"`, keyed by the same link-normalization rule as §4's dedup so re-adding a link
@@ -135,28 +135,13 @@ tag or source board, and the like/not-relevant triage state described in §3.
   auto-committing/pushing after each scrape; any residual drift is confined to scrape/push
   failures that surface in `systemctl --failed`.
 - No relevance filtering/scoring beyond the four hardcoded boards — the "is this job relevant to
-  me" triage described in `instructions.txt` is entirely manual (browser like/hide), not automated.
+  me" triage described in the original notes is entirely manual (browser like/hide), not automated.
 
 ## 8. Non-goals (current scope)
 
 - Automated relevance triage / description reading (see §1 divergence note).
 - Any board beyond the four listed in §1 — Profesia specifically is mentioned in
-  `instructions.txt` but not implemented.
+  the original notes but not implemented.
 - Real-time/on-demand scraping (only the daily timer).
 - Automated metadata beyond a best-effort title fetch for custom jobs — no description/org/salary
   scraping for user-added links, unlike the board scrapers in §4.
-
-## 9. Shared infra candidates (cross-project)
-
-Cross-check against `bookmarks/SPEC.md` §11 and revisit once `lang` is spec'd.
-
-| Candidate | What it'd replace | Confidence | Notes |
-|---|---|---|---|
-| systemd unit + Caddy reverse-proxy convention | `server-config/systemd/*`, `Caddyfile` | High | Same pattern as bookmarks: simple Bun service unit + a scheduled `.timer` for background work. Confirms `NEW_APP_CHECKLIST.md` should cover both service and timer/oneshot patterns, not just long-running services. |
-| Standard API error shape `{error: string}` | Nothing yet | High | hireme's `/api/jobs` 500 response (`server.ts:75`) matches bookmarks' `{error}` convention independently — good sign this is a real de facto standard worth writing down once, not enforcing via shared code. |
-| CSV/file-based read model with no-cache-on-read | `server.ts:loadJobs` | Low | Specific to hireme's scale (538 rows) and single-writer-daily-batch shape; bookmarks and (likely) lang are live CRUD over a real DB, so this pattern probably doesn't generalize. Noting only to rule it out. |
-| Per-source fetch failure isolation (`try/except` per board, continue on error) | `scrape_jobs.py:50-54` | Medium | Generic "run N independent fetchers, don't let one failure kill the batch, but do report which ones failed" is a reusable shape if `lang`'s TTS/dictionary generation ends up doing multi-source fetching too. Currently under-built even here (§7) — worth fixing here first before extracting. |
-| Bun static-file-server-plus-one-JSON-route pattern | `server.ts` | Low | Both bookmarks (Express `static` + JSON routes) and hireme (hand-rolled Bun `fetch`) solve "serve a SPA + an API from one process" but with different runtimes/frameworks — not enough overlap to unify without picking one runtime as standard first. |
-
-No auth, DB, or CLI-client overlap with bookmarks — this app's shared-infra footprint is
-entirely on the deploy/ops side, not application code.
