@@ -4,7 +4,7 @@
 import path from "path";
 import { mkdir, unlink } from "fs/promises";
 import { createRemoteJWKSet, jwtVerify } from "jose";
-import { fetchPage, FetchError } from "../../api/lib/fetch-page";
+import { fetchPage, FetchError } from "./lib/fetch-page";
 
 const PORT = Number(process.env.PORT ?? 4020);
 const ROOT = import.meta.dir;

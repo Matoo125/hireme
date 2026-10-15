@@ -21,10 +21,10 @@ sync_status=$?
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
 export GIT_TERMINAL_PROMPT=0
-if git diff --quiet -- hireme/jobs.csv; then
+if git diff --quiet -- jobs.csv; then
     echo "jobs.csv unchanged - nothing to commit"
 else
-    git add hireme/jobs.csv
+    git add jobs.csv
     git commit -m "sync jobs" >/dev/null
     if ! git pull --rebase --autostash --quiet origin main; then
         echo "!!! git pull --rebase FAILED (jobs.csv may conflict) - aborting rebase" >&2

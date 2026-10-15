@@ -5,7 +5,7 @@
     "start": "bun run server.ts"
   },
   "dependencies": {
-    "@research/editor": "workspace:*",
+    "@research/editor": "git+ssh://git@github.com/Matoo125/editor.git#v0.1.0",
     "jose": "^6.2.12"
   }
 }
