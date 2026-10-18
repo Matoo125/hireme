@@ -820,6 +820,21 @@ main {
   color: var(--card-bg);
 }
 
+/* Frozen columns (★, ✕, Title): the library paints them white with a
+   light-grey shadow. */
+.sheet--grid .jss_worksheet tbody .jss_freezed {
+  background-color: var(--card-bg);
+  box-shadow: 1px 0 0 var(--border) !important;
+}
+
+.sheet--grid .jss_worksheet thead .jss_freezed {
+  box-shadow: 1px 0 0 var(--border) !important;
+}
+
+.sheet--grid .jss_worksheet tbody .jss_freezed.highlight {
+  background-color: var(--selection);
+}
+
 /* Read-only cells: what the scraper owns. */
 .sheet--grid .jss_worksheet td.readonly {
   color: var(--fg);

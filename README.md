@@ -88,7 +88,11 @@ are plain textareas.
   [Jspreadsheet CE](https://github.com/jspreadsheet/ce) (MIT), which
   `server.ts` serves as `/sheet.js` + `/sheet.css` and the page loads the
   first time the table is shown. Excel-style selection, copy/paste and
-  keyboard editing, per-column sorting, the first columns frozen. The
+  keyboard editing, per-column sorting, the first columns frozen. Tags
+  show as their typed columns (Type, Experience, Location, Cause area,
+  Skills, Education, Other tags) and pay as the board's text plus Min,
+  Max, Currency and Period (see below); sorting puts empty cells last
+  either way and compares amounts as numbers. The
   filter row under the headers is ours, not Jspreadsheet's (which filters
   one column at a time, on whole cell values): each column offers its
   single values with counts (one board, one tag), a job passes a column
@@ -119,6 +123,8 @@ are plain textareas.
    except `id`, which `dedupe.py` fills in after merging):
    `source, title, link, publication_date, close_date, organization_name,
    organization_url, organization_description, description, salary_range, tags`.
+   The columns after `tags` are derived from `tags` and `salary_range`
+   by `scrape_jobs.py`; a scraper doesn't fill them in.
    Look at `scrapers/eighty_thousand_hours.py` (Algolia-backed),
    `scrapers/ea_opportunities.py` (data embedded in SSR HTML), or
    `scrapers/animal_advocacy_careers.py` (WordPress REST API) as
@@ -156,5 +162,25 @@ row: empty fields are filled in from whichever source has them, tags are
 unioned, `source` becomes a `;`-joined list of every board the job was
 found on, and the row keeps the first-seen listing's `id`, so likes and
 tracked applications stay attached.
+
+## Typed columns and salary numbers
+
+After deduplication, each job gets columns derived from its tags and
+salary text (the originals stay in `tags` and `salary_range`):
+
+- `scrapers/tag_fields.py` sorts tags into `job_type`, `experience`,
+  `education`, `location`, `cause_area` and `skills` (`;`-joined values),
+  merging each board's wording of the same thing ("Mid (5-9 years
+  experience)" and "Mid-senior level" are both "Mid (5–9y)"). Tags in no
+  typed column go to `other_tags`. A tag that is in neither the table nor
+  `UNTYPED` is named in the scrape log ("unknown tags: ..."), which is the
+  cue to add it.
+- `scrapers/salary.py` reads `salary_range` into `salary_min`,
+  `salary_max`, `salary_currency` and `salary_period` (hour, day, week,
+  month, year, total, unpaid). The first currency mentioned wins; a
+  period that isn't stated is taken as a year for amounts of 10,000 or
+  more in USD/GBP/EUR/CAD/AUD/CHF, else left empty. "Competitive" and
+  the like leave all four empty. The scrape log prints how many salaries
+  were read and how many weren't.
 
 Tests: `python3 -m unittest` (in `tests/`).

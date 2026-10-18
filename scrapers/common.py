@@ -11,7 +11,9 @@ HTML_TAG_RE = re.compile(r"<[^>]+>")
 
 # Common CSV/output schema every scraper module must produce per job.
 # Note: "id" is added later by scrapers.dedupe (it's derived from the
-# post-merge record, not something individual board scrapers set).
+# post-merge record, not something individual board scrapers set), and
+# the columns from "salary_min" on are derived after merging, from
+# salary_range (scrapers.salary) and tags (scrapers.tag_fields).
 FIELDNAMES = [
     "id",
     "source",
@@ -25,6 +27,17 @@ FIELDNAMES = [
     "description",
     "salary_range",
     "tags",
+    "salary_min",
+    "salary_max",
+    "salary_currency",
+    "salary_period",
+    "job_type",
+    "experience",
+    "education",
+    "location",
+    "cause_area",
+    "skills",
+    "other_tags",
 ]
 
 

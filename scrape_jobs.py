@@ -12,12 +12,15 @@ Each board is scraped by its own module in scrapers/, normalized to a
 common schema, cleaned up where boards spell the same tag or organization
 differently (scrapers/normalize.py), then merged and deduplicated
 (scrapers/dedupe.py) since the same role is often cross-posted to more
-than one board.
+than one board. Finally the tags are sorted into typed columns
+(scrapers/tag_fields.py) and the salary text read into numbers
+(scrapers/salary.py).
 """
 
 import argparse
 import csv
 import sys
+from collections import Counter
 
 from scrapers import (
     animal_advocacy_careers,
@@ -28,6 +31,8 @@ from scrapers import (
 from scrapers.common import FIELDNAMES
 from scrapers.dedupe import merge_duplicates
 from scrapers.normalize import normalize_jobs
+from scrapers.salary import parse_salary
+from scrapers.tag_fields import classify_tags
 
 SCRAPERS = [
     ("80,000 Hours", eighty_thousand_hours.fetch_jobs),
@@ -70,6 +75,23 @@ def main():
     print(f"Total before dedup: {len(all_jobs)}")
     merged = merge_duplicates(all_jobs)
     print(f"Total after dedup: {len(merged)}")
+
+    unknown_tags = Counter()
+    unread_salaries = []
+    for job in merged:
+        fields, unknown = classify_tags(job.get("tags"))
+        job.update(fields)
+        unknown_tags.update(unknown)
+        job.update(parse_salary(job.get("salary_range")))
+        if job.get("salary_range", "").strip() and not (job["salary_min"] or job["salary_max"]):
+            unread_salaries.append(job["salary_range"].strip())
+    # Not failures: a new tag stays in `tags`, an unread salary in salary_range.
+    # Named here so scrapers/tag_fields.py can be extended when a board adds tags.
+    if unknown_tags:
+        listed = ", ".join(f"{t} ({n})" for t, n in unknown_tags.most_common())
+        print(f"Tags not in scrapers/tag_fields.py: {listed}")
+    print(f"Salaries read: {sum(1 for j in merged if j['salary_min'] or j['salary_max'])}, "
+          f"not read: {len(unread_salaries)} {sorted(set(unread_salaries))}")
 
     with open(args.output, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDNAMES)

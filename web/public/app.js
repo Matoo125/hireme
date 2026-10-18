@@ -1109,6 +1109,28 @@ function sheetButton(label, title, active, onClick) {
  * The table's columns. `value` is the plain text a column sorts and exports
  * by; `cell` (optional) builds what's shown instead of that text.
  */
+// The columns the scrape derives from tags and salary text (see
+// scrapers/tag_fields.py and scrapers/salary.py): ";"-separated values.
+const TYPED_COLUMNS = [
+  ["job_type", "Type", 100],
+  ["experience", "Experience", 120],
+  ["location", "Location", 140],
+  ["cause_area", "Cause area", 170],
+  ["skills", "Skills", 170],
+  ["education", "Education", 150],
+];
+const PERIOD_LABELS = {
+  year: "per year", month: "per month", week: "per week", day: "per day",
+  hour: "per hour", total: "one-off", unpaid: "unpaid",
+};
+
+function splitList(value) {
+  return (value || "").split(";").map((v) => v.trim()).filter(Boolean);
+}
+
+const periodLabel = (job) => PERIOD_LABELS[job.salary_period] || job.salary_period || "";
+const formatPay = (value) => (value === "" || value == null ? "" : Number(value).toLocaleString("en-US"));
+
 function sheetColumns() {
   const columns = [
     {
@@ -1130,8 +1152,13 @@ function sheetColumns() {
     { key: "source", label: "Board", value: (j) => splitSources(j).join(", ") },
     { key: "publication_date", label: "Posted", className: "col-date", value: (j) => j.publication_date || "" },
     { key: "close_date", label: "Closes", className: "col-date", value: (j) => j.close_date || "" },
+    ...TYPED_COLUMNS.map(([key, label]) => ({ key, label, className: "col-tags", value: (j) => splitList(j[key]).join(", ") })),
     { key: "salary_range", label: "Salary", value: (j) => j.salary_range || "" },
-    { key: "tags", label: "Tags", className: "col-tags", value: (j) => splitTags(j).join(", ") },
+    { key: "salary_min", label: "Min", className: "col-date", value: (j) => j.salary_min || "" },
+    { key: "salary_max", label: "Max", className: "col-date", value: (j) => j.salary_max || "" },
+    { key: "salary_currency", label: "Currency", value: (j) => j.salary_currency || "" },
+    { key: "salary_period", label: "Period", value: periodLabel },
+    { key: "other_tags", label: "Other tags", className: "col-tags", value: (j) => splitList(j.other_tags).join(", ") },
     { key: "description", label: "Description", className: "col-long", value: (j) => j.description || "" },
   ];
   if (isLoggedIn() || applications.size) {
@@ -1268,7 +1295,10 @@ const BOOL = (value) => value === true || value === "true" || value === 1 || val
 
 /** Column name → picked values. "" stands for a blank cell. */
 const gridFilters = new Map();
-const FILTERABLE = new Set(["liked", "hidden", "title", "status", "organization", "board", "posted", "closes", "salary", "tags"]);
+const FILTERABLE = new Set([
+  "liked", "hidden", "title", "status", "organization", "board", "posted", "closes",
+  ...TYPED_COLUMNS.map(([name]) => name), "salary", "salary_currency", "salary_period", "other_tags",
+]);
 const yesNo = (on) => (on ? "Yes" : "No");
 const orBlank = (values) => (values.length ? values : [""]);
 
@@ -1284,8 +1314,11 @@ function filterValues(job, name) {
     case "posted": return [job.publication_date || ""];
     case "closes": return [job.close_date || ""];
     case "salary": return [job.salary_range || ""];
-    case "tags": return orBlank(splitTags(job));
-    default: return [];
+    case "salary_currency": return [job.salary_currency || ""];
+    case "salary_period": return [periodLabel(job)];
+    case "other_tags": return orBlank(splitList(job.other_tags));
+    default:
+      return TYPED_COLUMNS.some(([typed]) => typed === name) ? orBlank(splitList(job[name])) : [];
   }
 }
 
@@ -1381,6 +1414,9 @@ function buildGrid(lib, list) {
   const fullTextTitle = (cell, value) => {
     cell.title = String(value ?? "");
   };
+  const payCell = (cell, value) => {
+    cell.textContent = formatPay(value);
+  };
 
   const columns = [
     { name: "id", type: "hidden" },
@@ -1398,8 +1434,16 @@ function buildGrid(lib, list) {
     { name: "board", title: "Board", readOnly: true, width: 150 },
     { name: "posted", title: "Posted", readOnly: true, width: 92 },
     { name: "closes", title: "Closes", readOnly: true, width: 92 },
-    { name: "salary", title: "Salary", readOnly: true, width: 150 },
-    { name: "tags", title: "Tags", readOnly: true, width: 200, render: fullTextTitle },
+    ...TYPED_COLUMNS.map(([name, title, width]) => ({ name, title, readOnly: true, width, render: fullTextTitle })),
+    { name: "salary", title: "Salary", readOnly: true, width: 150, render: fullTextTitle },
+    // Shown with thousands separators; sorting() below reads them as numbers.
+    // (Not type "numeric": Jspreadsheet sorts those as Number(value), which
+    // turns a blank into 0.)
+    { name: "salary_min", title: "Min", readOnly: true, width: 90, align: "right", render: payCell },
+    { name: "salary_max", title: "Max", readOnly: true, width: 90, align: "right", render: payCell },
+    { name: "salary_currency", title: "Currency", readOnly: true, width: 76 },
+    { name: "salary_period", title: "Period", readOnly: true, width: 86 },
+    { name: "other_tags", title: "Other tags", readOnly: true, width: 170, render: fullTextTitle },
     { name: "description", title: "Description", readOnly: true, width: 360, render: fullTextTitle },
   ];
   for (const column of columns) column.align ??= column.type === "checkbox" ? "center" : "left";
@@ -1419,9 +1463,14 @@ function buildGrid(lib, list) {
       posted: job.publication_date || "",
       closes: job.close_date || "",
       salary: job.salary_range || "",
-      tags: splitTags(job).join(", "),
+      salary_min: job.salary_min === "" || job.salary_min == null ? "" : Number(job.salary_min),
+      salary_max: job.salary_max === "" || job.salary_max == null ? "" : Number(job.salary_max),
+      salary_currency: job.salary_currency || "",
+      salary_period: periodLabel(job),
+      other_tags: splitList(job.other_tags).join(", "),
       description: job.description || "",
     };
+    for (const [name] of TYPED_COLUMNS) row[name] = splitList(job[name]).join(", ");
     return columns.map((c) => row[c.name]);
   });
 
@@ -1455,6 +1504,26 @@ function buildGrid(lib, list) {
     }],
     // Never evaluate a cell as a formula: a title could start with "=".
     parseFormulas: false,
+    // Blank cells last whichever way a column is sorted, numbers (including
+    // "120,000" as displayed) by value, other text in natural order.
+    sorting(order) {
+      const asNumber = (v) => {
+        if (typeof v === "number") return v;
+        const plain = String(v).replace(/,/g, "");
+        return /^-?\d+(\.\d+)?$/.test(plain) ? Number(plain) : null;
+      };
+      return ([, a], [, b]) => {
+        const blankA = a === "" || a == null;
+        const blankB = b === "" || b == null;
+        if (blankA || blankB) return blankA - blankB;
+        const x = asNumber(a);
+        const y = asNumber(b);
+        const cmp = x !== null && y !== null
+          ? x - y
+          : String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
+        return order ? -cmp : cmp;
+      };
+    },
     about: false,
     allowExport: false,
     onbeforechange(instance, cell, x, y, value) {
