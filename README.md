@@ -94,8 +94,9 @@ are plain textareas.
   the cards do; notes on an untracked job start tracking it, and clearing
   a status untracks it unless it has notes or a letter. The scraped
   columns are read-only, since the next scrape would overwrite them, and
-  formulas are never evaluated. "Download CSV" saves the rows in the
-  grid's current order. If the library can't load, a plain read-only
+  formulas are never evaluated. "Download CSV" saves what the grid
+  shows: its current order, and only the rows its column filter keeps
+  (Jspreadsheet CE filters one column at a time). If the library can't load, a plain read-only
   table (click a header to sort) shows instead. It replaced the public
   Airtable view (and its sync) as the way to see everything at once. The
   choice of layout is remembered in `localStorage`.

@@ -1423,9 +1423,17 @@ function downloadCsv() {
   const columns = sheetColumns().filter((c) => c.export !== false);
   const header = ["Liked", "Not relevant", ...columns.map((c) => c.label), "Link", "Organization URL"];
   const lines = [header.map(csvField).join(",")];
-  // The grid may have been re-sorted in place: export in its order.
+  // The grid may have been re-sorted in place: export in its order, and only
+  // the rows its column filter keeps (`results`: their indices, or null when
+  // nothing is filtered).
   const byId = new Map(shownRows.map((job) => [job.id, job]));
-  const rows = grid ? grid.getData().map((row) => byId.get(row[0])).filter(Boolean) : shownRows;
+  let rows = shownRows;
+  if (grid) {
+    const data = grid.getData();
+    rows = (grid.results ? grid.results.map((i) => data[i]) : data)
+      .map((row) => byId.get(row?.[0]))
+      .filter(Boolean);
+  }
   for (const job of rows) {
     lines.push([
       likedJobs.has(job.id) ? "yes" : "",
