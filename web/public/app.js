@@ -212,6 +212,10 @@ const emptyEl = document.getElementById("empty");
 const activeTagsEl = document.getElementById("activeTags");
 const sourceFiltersEl = document.getElementById("sourceFilters");
 const detailToggleEls = document.querySelectorAll(".detail-toggle");
+const layoutEl = document.getElementById("layout");
+const sheetEl = document.getElementById("sheet");
+const detailTogglesEl = document.getElementById("detailToggles");
+const downloadCsvEl = document.getElementById("downloadCsv");
 
 let jobs = [];
 const activeTags = new Set();
@@ -1062,6 +1066,170 @@ function updateDescriptionToggles() {
   }
 }
 
+// ── Table layout ─────────────────────────────────────────────────────────────
+//
+// The same filtered list as the cards, as a spreadsheet: one row per job, a
+// column per field, sortable by clicking a header, and downloadable as CSV.
+// (It replaces the public Airtable view, which the free plan's API quota
+// couldn't keep in sync.) The layout choice is remembered per browser, and
+// ?layout=table links straight to it.
+
+const LAYOUT_KEY = "jobBoard.layout";
+layoutEl.value =
+  new URLSearchParams(location.search).get("layout") === "table" ||
+  localStorage.getItem(LAYOUT_KEY) === "table"
+    ? "table"
+    : "cards";
+
+/** Set by clicking a column header; the sort dropdown clears it. */
+let tableSort = null; // { key, dir: 1 | -1 }
+
+function textLink(href, text) {
+  if (!href) return document.createTextNode(text);
+  const a = document.createElement("a");
+  a.href = href;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.textContent = text;
+  return a;
+}
+
+function sheetButton(label, title, active, onClick) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "sheet-btn" + (active ? " active" : "");
+  btn.textContent = label;
+  btn.title = title;
+  btn.addEventListener("click", onClick);
+  return btn;
+}
+
+/**
+ * The table's columns. `value` is the plain text a column sorts and exports
+ * by; `cell` (optional) builds what's shown instead of that text.
+ */
+function sheetColumns() {
+  const columns = [
+    {
+      key: "liked", label: "★", className: "col-actions", export: false,
+      value: (j) => (likedJobs.has(j.id) ? "1" : ""),
+      cell: (j) => {
+        const wrap = document.createElement("span");
+        wrap.append(
+          sheetButton(likedJobs.has(j.id) ? "★" : "☆", likedJobs.has(j.id) ? "Remove from liked" : "Mark as liked",
+            likedJobs.has(j.id), () => toggleLiked(j.id)),
+          sheetButton(hiddenJobs.has(j.id) ? "↺" : "✕", hiddenJobs.has(j.id) ? "Restore to list" : "Hide as not relevant",
+            false, () => toggleHidden(j.id)),
+        );
+        return wrap;
+      },
+    },
+    { key: "title", label: "Title", className: "col-title", value: (j) => j.title || "", cell: (j) => textLink(j.link, j.title || "Untitled role") },
+    { key: "organization_name", label: "Organization", value: (j) => j.organization_name || "", cell: (j) => textLink(j.organization_url, j.organization_name || "") },
+    { key: "source", label: "Board", value: (j) => splitSources(j).join(", ") },
+    { key: "publication_date", label: "Posted", className: "col-date", value: (j) => j.publication_date || "" },
+    { key: "close_date", label: "Closes", className: "col-date", value: (j) => j.close_date || "" },
+    { key: "salary_range", label: "Salary", value: (j) => j.salary_range || "" },
+    { key: "tags", label: "Tags", className: "col-tags", value: (j) => splitTags(j).join(", ") },
+    { key: "description", label: "Description", className: "col-long", value: (j) => j.description || "" },
+  ];
+  if (isLoggedIn() || applications.size) {
+    columns.splice(2, 0, {
+      key: "status", label: "Status",
+      value: (j) => STATUS_LABELS[applications.get(j.id)?.status] || "",
+    });
+  }
+  return columns;
+}
+
+function sortRows(list, columns) {
+  if (!tableSort) return list;
+  const column = columns.find((c) => c.key === tableSort.key);
+  if (!column) return list;
+  // Empty cells sort last either way, as in a spreadsheet.
+  return [...list].sort((a, b) => {
+    const x = column.value(a);
+    const y = column.value(b);
+    if (!x || !y) return (x ? 0 : 1) - (y ? 0 : 1);
+    return x.localeCompare(y, undefined, { numeric: true, sensitivity: "base" }) * tableSort.dir;
+  });
+}
+
+function renderTable(list) {
+  const columns = sheetColumns();
+  const rows = sortRows(list, columns);
+
+  const table = document.createElement("table");
+  const head = table.createTHead().insertRow();
+  for (const column of columns) {
+    const th = document.createElement("th");
+    th.className = column.className || "";
+    th.scope = "col";
+    const sorted = tableSort?.key === column.key;
+    th.setAttribute("aria-sort", sorted ? (tableSort.dir === 1 ? "ascending" : "descending") : "none");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = column.label + (sorted ? (tableSort.dir === 1 ? " ▲" : " ▼") : "");
+    btn.title = `Sort by ${column.key === "liked" ? "liked" : column.label.toLowerCase()}`;
+    btn.addEventListener("click", () => {
+      tableSort = sorted ? { key: column.key, dir: -tableSort.dir } : { key: column.key, dir: 1 };
+      render();
+    });
+    th.appendChild(btn);
+    head.appendChild(th);
+  }
+
+  const body = table.createTBody();
+  for (const job of rows) {
+    const tr = body.insertRow();
+    tr.className = (likedJobs.has(job.id) ? "is-liked" : "") + (hiddenJobs.has(job.id) ? " is-hidden" : "");
+    for (const column of columns) {
+      const td = tr.insertCell();
+      td.className = column.className || "";
+      if (column.cell) td.appendChild(column.cell(job));
+      else td.textContent = column.value(job);
+    }
+    // Clicking a row (not a link or button in it) shows its long cells in full.
+    tr.addEventListener("click", (e) => {
+      if (e.target.closest("a, button")) return;
+      tr.classList.toggle("expanded");
+    });
+  }
+
+  sheetEl.replaceChildren(table);
+  return rows;
+}
+
+/** The rows on screen, in the order shown, as a CSV file. */
+let shownRows = [];
+
+function csvField(value) {
+  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+function downloadCsv() {
+  const columns = sheetColumns().filter((c) => c.export !== false);
+  const header = ["Liked", "Not relevant", ...columns.map((c) => c.label), "Link", "Organization URL"];
+  const lines = [header.map(csvField).join(",")];
+  for (const job of shownRows) {
+    lines.push([
+      likedJobs.has(job.id) ? "yes" : "",
+      hiddenJobs.has(job.id) ? "yes" : "",
+      ...columns.map((c) => c.value(job)),
+      job.link || "",
+      job.organization_url || "",
+    ].map(csvField).join(","));
+  }
+  // A BOM so Excel reads the file as UTF-8.
+  const blob = new Blob(["﻿" + lines.join("\r\n") + "\r\n"], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `hireme-jobs-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function render() {
   const term = searchEl.value.trim().toLowerCase();
   const filtered = jobs.filter(
@@ -1081,6 +1249,18 @@ function render() {
   closeLiveFields();
   jobsEl.innerHTML = "";
   emptyEl.hidden = sorted.length > 0;
+
+  const table = layoutEl.value === "table";
+  document.body.classList.toggle("layout-table", table);
+  jobsEl.hidden = table;
+  sheetEl.hidden = !table || !sorted.length;
+  detailTogglesEl.hidden = table;
+  downloadCsvEl.hidden = !table || !sorted.length;
+  if (table) {
+    shownRows = renderTable(sorted);
+    return;
+  }
+  sheetEl.replaceChildren();
   for (const job of sorted) {
     jobsEl.appendChild(jobCard(job));
   }
@@ -1099,7 +1279,20 @@ async function init() {
 }
 
 searchEl.addEventListener("input", render);
-sortEl.addEventListener("change", render);
+sortEl.addEventListener("change", () => {
+  tableSort = null;
+  render();
+});
 viewEl.addEventListener("change", render);
+layoutEl.addEventListener("change", () => {
+  localStorage.setItem(LAYOUT_KEY, layoutEl.value);
+  // Keep a ?layout=table link pointing at the layout actually shown.
+  const url = new URL(location.href);
+  if (layoutEl.value === "table") url.searchParams.set("layout", "table");
+  else url.searchParams.delete("layout");
+  history.replaceState(null, "", url);
+  render();
+});
+downloadCsvEl.addEventListener("click", downloadCsv);
 
 init();

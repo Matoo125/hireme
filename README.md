@@ -83,6 +83,15 @@ are plain textareas.
   and is wiped if you clear site data. It survives re-scrapes because
   each job gets a stable `id` (hashed from its normalized link, or
   org+title as a fallback) computed in `scrapers/dedupe.py`.
+- **Table layout**: the Cards/Table dropdown (or a `?layout=table` link)
+  shows the same filtered list as a spreadsheet - one row per job, a
+  column per field, the ★ and Title columns pinned while scrolling
+  sideways. Click a header to sort by it (again to reverse; the sort
+  dropdown resets it), click a row to show its long cells in full, and
+  "Download CSV" saves exactly the rows shown, with liked/not-relevant
+  and application status. It replaces the public Airtable view as the
+  way to see everything at once. The choice of layout is remembered in
+  `localStorage`.
 - **Add a job by link** (logged in only): paste a URL and the server
   fetches it to fill in a title (`og:title`/`<title>`, falling back to
   the hostname if fetching fails), then stores it per-user in

@@ -21,7 +21,7 @@
         </span>
       </div>
     </div>
-    <p class="subtitle">We highlight impactful opportunities that are relevant for seekers from Slovakia, or anywhere in the world. You can see the data in <a href="https://airtable.com/appgt87HxTF26Orqm/shrdINsIjsRZGo7Im">airtable</a> as well. Jobs are sourced from following job boards <a href="">80 000 hours</a>, <a href="">Probably Good</a><a href="">CEA Opportunities board</a>, and <a href="">Effective Animal Advocacy</a>. We plan to expand it with support of local opportunities in Slovakia, as well as additional international sources. </p>
+    <p class="subtitle">We highlight impactful opportunities that are relevant for seekers from Slovakia, or anywhere in the world. Switch to the <a href="?layout=table">table view</a> to see everything as a sheet, or download it as CSV. Jobs are sourced from following job boards <a href="">80 000 hours</a>, <a href="">Probably Good</a><a href="">CEA Opportunities board</a>, and <a href="">Effective Animal Advocacy</a>. We plan to expand it with support of local opportunities in Slovakia, as well as additional international sources. </p>
 
     <div id="cvSection" class="cv-section" hidden>
       <div id="cvInfo" class="cv-info" hidden>
@@ -62,9 +62,13 @@
         <option value="hidden">Not relevant</option>
         <option value="tracked">Tracked</option>
       </select>
+      <select id="layout" aria-label="Layout">
+        <option value="cards">Cards</option>
+        <option value="table">Table</option>
+      </select>
     </div>
 
-    <div class="chip-row">
+    <div id="detailToggles" class="chip-row">
       <span class="detail-toggles-label">Show:</span>
       <button type="button" class="chip detail-toggle" data-detail="sources">Job board tags</button>
       <button type="button" class="chip detail-toggle" data-detail="salary">Salary</button>
@@ -74,10 +78,15 @@
 
     <div id="sourceFilters" class="chip-row"></div>
     <div id="activeTags" class="chip-row"></div>
-    <p id="count" class="count"></p>
+    <div class="count-row">
+      <p id="count" class="count"></p>
+      <button id="downloadCsv" type="button" class="auth-btn auth-btn--small" hidden>Download CSV</button>
+    </div>
   </header>
 
   <main id="jobs"></main>
+  <!-- The table layout: every listing as a sheet row (see renderTable in app.js). -->
+  <div id="sheet" class="sheet" hidden></div>
 
   <p id="empty" class="empty" hidden>No jobs match your filters.</p>
 

@@ -579,3 +579,159 @@ main {
   font-size: 0.75rem;
   color: var(--muted);
 }
+
+/* ── Table layout ─────────────────────────────────────────────────────── */
+
+.count-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+/* The sheet is wider than the 720px column the header and cards use, and
+   scrolls in both directions inside its own box so the header row stays put. */
+.sheet {
+  max-width: 1600px;
+  max-height: calc(100vh - 2rem);
+  margin: 0 auto;
+  overflow: auto;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.sheet table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.82rem;
+  min-width: 100%;
+}
+
+.sheet th,
+.sheet td {
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 16rem;
+  background: var(--card-bg);
+}
+
+.sheet th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 0;
+  background: var(--chip-bg);
+}
+
+.sheet th button {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: none;
+  background: none;
+  color: var(--chip-fg);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* The ★ and Title columns stay in view while scrolling sideways. */
+.sheet .col-actions {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  width: 4rem;
+  min-width: 4rem;
+  max-width: 4rem;
+}
+
+.sheet .col-title {
+  position: sticky;
+  left: 4rem;
+  z-index: 1;
+  max-width: 22rem;
+  box-shadow: 1px 0 0 var(--border);
+}
+
+.sheet th.col-actions,
+.sheet th.col-title {
+  z-index: 3;
+}
+
+.sheet .col-date {
+  font-variant-numeric: tabular-nums;
+}
+
+.sheet .col-long {
+  max-width: 32rem;
+}
+
+.sheet a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.sheet a:hover {
+  text-decoration: underline;
+}
+
+.sheet tbody tr {
+  cursor: pointer;
+}
+
+.sheet tbody tr:hover td {
+  background: var(--bg);
+}
+
+/* A clicked row shows its long cells (description, tags) in full. */
+.sheet tr.expanded td {
+  white-space: normal;
+}
+
+.sheet tr.is-hidden td {
+  color: var(--muted);
+}
+
+.sheet-btn {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 0.9rem;
+  padding: 0 0.15rem;
+  cursor: pointer;
+}
+
+.sheet-btn:hover,
+.sheet-btn.active {
+  color: var(--accent);
+}
+
+@media (max-width: 600px) {
+  /* Four controls don't fit one row: search gets its own. */
+  .controls {
+    flex-wrap: wrap;
+  }
+
+  #search {
+    flex-basis: 100%;
+  }
+
+  .controls select {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* On a phone the pinned columns would leave no room to scroll the rest. */
+  .sheet .col-actions,
+  .sheet .col-title {
+    position: static;
+    box-shadow: none;
+  }
+}
