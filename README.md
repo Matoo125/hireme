@@ -84,14 +84,21 @@ are plain textareas.
   each job gets a stable `id` (hashed from its normalized link, or
   org+title as a fallback) computed in `scrapers/dedupe.py`.
 - **Table layout**: the Cards/Table dropdown (or a `?layout=table` link)
-  shows the same filtered list as a spreadsheet - one row per job, a
-  column per field, the ★ and Title columns pinned while scrolling
-  sideways. Click a header to sort by it (again to reverse; the sort
-  dropdown resets it), click a row to show its long cells in full, and
-  "Download CSV" saves exactly the rows shown, with liked/not-relevant
-  and application status. It replaced the public Airtable view (and
-  its sync) as the way to see everything at once. The choice of layout is remembered in
-  `localStorage`.
+  shows the same filtered list as a spreadsheet grid -
+  [Jspreadsheet CE](https://github.com/jspreadsheet/ce) (MIT), which
+  `server.ts` serves as `/sheet.js` + `/sheet.css` and the page loads the
+  first time the table is shown. Excel-style selection, copy/paste and
+  keyboard editing, per-column sorting and filters, the first columns
+  frozen. Only our own columns are editable: liked and not relevant, and
+  (logged in) the application's status and notes, which save exactly as
+  the cards do; notes on an untracked job start tracking it, and clearing
+  a status untracks it unless it has notes or a letter. The scraped
+  columns are read-only, since the next scrape would overwrite them, and
+  formulas are never evaluated. "Download CSV" saves the rows in the
+  grid's current order. If the library can't load, a plain read-only
+  table (click a header to sort) shows instead. It replaced the public
+  Airtable view (and its sync) as the way to see everything at once. The
+  choice of layout is remembered in `localStorage`.
 - **Add a job by link** (logged in only): paste a URL and the server
   fetches it to fill in a title (`og:title`/`<title>`, falling back to
   the hostname if fetching fails), then stores it per-user in

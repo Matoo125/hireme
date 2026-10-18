@@ -1196,8 +1196,220 @@ function renderTable(list) {
     });
   }
 
+  sheetEl.classList.remove("sheet--grid");
   sheetEl.replaceChildren(table);
   return rows;
+}
+
+// ── Spreadsheet grid (Jspreadsheet) ─────────────────────────────────────────
+//
+// The table layout upgrades to an editable grid once /sheet.js (Jspreadsheet
+// CE, served by server.ts) has loaded: Excel-style selection, copy/paste,
+// fill and keyboard editing, column sorting and filters. Only the columns
+// that are ours are editable: liked, not relevant and, when logged in, the
+// application's status and notes. Everything the scraper fills in is
+// read-only, since the next scrape would overwrite it. Edits go through the
+// same state and saves as the cards. Until the library arrives, or if it
+// can't, renderTable's read-only table is what shows.
+
+let sheetLib = null;
+function loadSheetLib() {
+  sheetLib ??= new Promise((resolve, reject) => {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "/sheet.css";
+    document.head.appendChild(link);
+    const script = document.createElement("script");
+    script.src = "/sheet.js";
+    script.onload = () => (window.jspreadsheet ? resolve(window.jspreadsheet) : reject(new Error("jspreadsheet missing")));
+    script.onerror = () => reject(new Error("could not load /sheet.js"));
+    document.head.appendChild(script);
+  }).catch((err) => {
+    console.warn("Spreadsheet unavailable, showing the read-only table:", err);
+    return null;
+  });
+  return sheetLib;
+}
+
+/** The grid's worksheet while one is shown, else null. */
+let grid = null;
+let gridEl = null;
+let sheetRenders = 0;
+
+function destroyGrid() {
+  if (gridEl && window.jspreadsheet) window.jspreadsheet.destroy(gridEl);
+  grid = null;
+  gridEl = null;
+}
+
+function renderSheet(list) {
+  const render = ++sheetRenders;
+  if (window.jspreadsheet) return buildGrid(window.jspreadsheet, list);
+  destroyGrid();
+  shownRows = renderTable(list);
+  loadSheetLib().then((lib) => {
+    // A newer render (or a switch to cards) superseded this one meanwhile.
+    if (lib && render === sheetRenders && layoutEl.value === "table") buildGrid(lib, list);
+  });
+}
+
+const BOOL = (value) => value === true || value === "true" || value === 1 || value === "1";
+
+let prefsTimer = null;
+/** A paste can flip hundreds of checkboxes: send the preferences once. */
+function savePreferencesSoon() {
+  clearTimeout(prefsTimer);
+  prefsTimer = setTimeout(savePreferences, 400);
+}
+
+function buildGrid(lib, list) {
+  destroyGrid();
+  sheetEl.classList.add("sheet--grid");
+  const byId = new Map(list.map((job) => [job.id, job]));
+  const loggedIn = isLoggedIn();
+  const linkCell = (field, textField) => (cell, value, x, y, instance) => {
+    const job = byId.get(instance.getValueFromCoords(0, y));
+    const href = job?.[field];
+    if (!href) return;
+    cell.textContent = "";
+    cell.appendChild(textLink(href, String(value ?? "")));
+  };
+  // Long cells stay one line high; hovering shows the whole text.
+  const fullTextTitle = (cell, value) => {
+    cell.title = String(value ?? "");
+  };
+
+  const columns = [
+    { name: "id", type: "hidden" },
+    { name: "liked", title: "★", type: "checkbox", width: 36 },
+    { name: "hidden", title: "✕", type: "checkbox", width: 36 },
+    { name: "title", title: "Title", readOnly: true, width: 280, render: linkCell("link") },
+    ...(loggedIn ? [
+      {
+        name: "status", title: "Status", type: "dropdown", width: 120,
+        source: [{ id: "", name: "" }, ...VALID_STATUSES.map((s) => ({ id: s, name: STATUS_LABELS[s] }))],
+      },
+      { name: "notes", title: "Notes", width: 220 },
+    ] : []),
+    { name: "organization", title: "Organization", readOnly: true, width: 180, render: linkCell("organization_url") },
+    { name: "board", title: "Board", readOnly: true, width: 150 },
+    { name: "posted", title: "Posted", readOnly: true, width: 92 },
+    { name: "closes", title: "Closes", readOnly: true, width: 92 },
+    { name: "salary", title: "Salary", readOnly: true, width: 150 },
+    { name: "tags", title: "Tags", readOnly: true, width: 200, render: fullTextTitle },
+    { name: "description", title: "Description", readOnly: true, width: 360, render: fullTextTitle },
+  ];
+  for (const column of columns) column.align ??= column.type === "checkbox" ? "center" : "left";
+  const col = Object.fromEntries(columns.map((c, i) => [c.name, i]));
+
+  const data = list.map((job) => {
+    const app = applications.get(job.id);
+    const row = {
+      id: job.id,
+      liked: likedJobs.has(job.id),
+      hidden: hiddenJobs.has(job.id),
+      title: job.title || "Untitled role",
+      status: app?.status || "",
+      notes: app?.notes || "",
+      organization: job.organization_name || "",
+      board: splitSources(job).join(", "),
+      posted: job.publication_date || "",
+      closes: job.close_date || "",
+      salary: job.salary_range || "",
+      tags: splitTags(job).join(", "),
+      description: job.description || "",
+    };
+    return columns.map((c) => row[c.name]);
+  });
+
+  // Set while the grid itself writes a cell, so onchange doesn't treat it as an edit.
+  let writing = false;
+
+  gridEl = document.createElement("div");
+  sheetEl.replaceChildren(gridEl);
+  const wide = window.innerWidth > 600;
+  [grid] = lib(gridEl, {
+    worksheets: [{
+      data,
+      columns,
+      tableOverflow: true,
+      tableWidth: `${sheetEl.clientWidth}px`,
+      tableHeight: `${Math.max(320, window.innerHeight - 40)}px`,
+      // id, ★, ✕ and Title stay in view while scrolling sideways.
+      freezeColumns: wide ? 4 : 0,
+      columnSorting: true,
+      filters: true,
+      allowInsertRow: false,
+      allowManualInsertRow: false,
+      allowInsertColumn: false,
+      allowManualInsertColumn: false,
+      allowDeleteRow: false,
+      allowDeleteColumn: false,
+      allowRenameColumn: false,
+      columnDrag: false,
+      rowDrag: false,
+      allowComments: false,
+    }],
+    // Never evaluate a cell as a formula: a title could start with "=".
+    parseFormulas: false,
+    about: false,
+    allowExport: false,
+    onbeforechange(instance, cell, x, y, value) {
+      if (writing || Number(x) !== col.status || value) return undefined;
+      // Clearing the status untracks the job, which would throw away its
+      // notes and letter; that's done from the card, where they're visible.
+      const app = applications.get(instance.getValueFromCoords(0, y));
+      if (app && (app.notes || app.motivationLetter)) {
+        setTimeout(() => alert("This application has notes or a letter. Untrack it from its card in the Tracked view."));
+        return instance.getValueFromCoords(x, y);
+      }
+      return undefined;
+    },
+    onchange(instance, cell, x, y, value) {
+      if (writing) return;
+      const id = instance.getValueFromCoords(0, y);
+      switch (Number(x)) {
+        case col.liked:
+        case col.hidden: {
+          const set = Number(x) === col.liked ? likedJobs : hiddenJobs;
+          if (BOOL(value)) set.add(id);
+          else set.delete(id);
+          saveIdSet(Number(x) === col.liked ? LIKED_KEY : HIDDEN_KEY, set);
+          savePreferencesSoon();
+          break;
+        }
+        case col.status: {
+          const app = applications.get(id);
+          if (!value) {
+            if (app) deleteApplication(id);
+          } else if (app) {
+            updateApplication(id, "status", value);
+          } else {
+            const now = new Date().toISOString();
+            saveApplication(id, { status: value, notes: "", motivationLetter: "", createdAt: now, updatedAt: now });
+          }
+          break;
+        }
+        case col.notes: {
+          const text = String(value ?? "");
+          if (applications.has(id)) {
+            updateApplication(id, "notes", text);
+          } else if (text) {
+            // Notes on an untracked job start tracking it, as on a card.
+            const now = new Date().toISOString();
+            saveApplication(id, { status: "interested", notes: text, motivationLetter: "", createdAt: now, updatedAt: now });
+            writing = true;
+            instance.setValueFromCoords(col.status, y, "interested");
+            writing = false;
+          }
+          break;
+        }
+        default:
+          return;
+      }
+      renderViewOptions();
+    },
+  });
 }
 
 /** The rows on screen, in the order shown, as a CSV file. */
@@ -1211,7 +1423,10 @@ function downloadCsv() {
   const columns = sheetColumns().filter((c) => c.export !== false);
   const header = ["Liked", "Not relevant", ...columns.map((c) => c.label), "Link", "Organization URL"];
   const lines = [header.map(csvField).join(",")];
-  for (const job of shownRows) {
+  // The grid may have been re-sorted in place: export in its order.
+  const byId = new Map(shownRows.map((job) => [job.id, job]));
+  const rows = grid ? grid.getData().map((row) => byId.get(row[0])).filter(Boolean) : shownRows;
+  for (const job of rows) {
     lines.push([
       likedJobs.has(job.id) ? "yes" : "",
       hiddenJobs.has(job.id) ? "yes" : "",
@@ -1257,9 +1472,12 @@ function render() {
   detailTogglesEl.hidden = table;
   downloadCsvEl.hidden = !table || !sorted.length;
   if (table) {
-    shownRows = renderTable(sorted);
+    shownRows = sorted;
+    if (sorted.length) renderSheet(sorted);
+    else destroyGrid();
     return;
   }
+  destroyGrid();
   sheetEl.replaceChildren();
   for (const job of sorted) {
     jobsEl.appendChild(jobCard(job));

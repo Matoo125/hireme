@@ -713,6 +713,54 @@ main {
   color: var(--accent);
 }
 
+/* The Jspreadsheet grid scrolls itself, so the box around it steps aside;
+   its colours follow the page's (jspreadsheet.themes.css reads these). */
+.sheet.sheet--grid {
+  max-height: none;
+  overflow: visible;
+  border: none;
+  background: none;
+  --border_color: var(--border);
+  --border_color_highlighted: var(--accent);
+  --header_background: var(--chip-bg);
+  --header_background_highlighted: var(--border);
+  --header_color: var(--chip-fg);
+  --header_color_highlighted: var(--fg);
+  --content_background: var(--card-bg);
+  --content_background_highlighted: var(--chip-bg);
+  --content_color: var(--fg);
+  --content_color_highlighted: var(--fg);
+  --menu_background: var(--card-bg);
+  --menu_background_highlighted: var(--chip-bg);
+  --menu_color: var(--fg);
+  --menu_color_highlighted: var(--fg);
+  --selection: color-mix(in srgb, var(--accent) 18%, transparent);
+  --cursor: color-mix(in srgb, var(--accent) 10%, transparent);
+  font-size: 0.82rem;
+}
+
+/* One line per row, like a sheet: Jspreadsheet sets pre-wrap inline on
+   long cells, hence !important. */
+.sheet--grid .jss_worksheet > tbody > tr > td {
+  white-space: nowrap !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sheet--grid .jss_worksheet td a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.sheet--grid .jss_worksheet td a:hover {
+  text-decoration: underline;
+}
+
+/* Read-only cells: what the scraper owns. */
+.sheet--grid .jss_worksheet td.readonly {
+  color: var(--fg);
+}
+
 @media (max-width: 600px) {
   /* Four controls don't fit one row: search gets its own. */
   .controls {

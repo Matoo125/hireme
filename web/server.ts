@@ -217,6 +217,43 @@ const editorAssets = buildEditorAssets().catch((err) => {
   return new Map<string, Asset>();
 });
 
+// ── Spreadsheet bundle ───────────────────────────────────────────────────────
+//
+// The table layout's grid is Jspreadsheet CE (MIT), with its jSuites and
+// formula dependencies. They're UMD builds that find each other as globals,
+// so they're concatenated in load order into one /sheet.js rather than
+// bundled; the page loads it the first time the table layout is shown.
+
+function toAsset(body: Uint8Array, type: string): Asset {
+  return { body, gzip: Bun.gzipSync(body), etag: `"${Bun.hash(body).toString(36)}"`, type };
+}
+
+async function buildSheetAssets(): Promise<Map<string, Asset>> {
+  const concat = async (files: string[]) => {
+    const parts = await Promise.all(files.map((f) => Bun.file(Bun.resolveSync(f, ROOT)).text()));
+    return new TextEncoder().encode(parts.join("\n;\n"));
+  };
+  const js = await concat([
+    "jsuites/dist/jsuites.js",
+    "@jspreadsheet/formula/dist/index.js",
+    "jspreadsheet-ce/dist/index.js",
+  ]);
+  const css = new TextEncoder().encode((await Promise.all([
+    "jsuites/dist/jsuites.css",
+    "jspreadsheet-ce/dist/jspreadsheet.css",
+    "jspreadsheet-ce/dist/jspreadsheet.themes.css",
+  ].map((f) => Bun.file(Bun.resolveSync(f, ROOT)).text()))).join("\n"));
+  return new Map([
+    ["/sheet.js", toAsset(js, "text/javascript; charset=utf-8")],
+    ["/sheet.css", toAsset(css, "text/css; charset=utf-8")],
+  ]);
+}
+
+const sheetAssets = buildSheetAssets().catch((err) => {
+  console.error("Could not load the spreadsheet library; the table stays read-only:", err);
+  return new Map<string, Asset>();
+});
+
 function serveAsset(req: Request, asset: Asset): Response {
   const headers: Record<string, string> = {
     "Content-Type": asset.type,
@@ -511,6 +548,12 @@ Bun.serve({
     if (url.pathname === "/editor.js" || url.pathname === "/editor.css") {
       const asset = (await editorAssets).get(url.pathname);
       return asset ? serveAsset(req, asset) : new Response("Editor unavailable", { status: 503 });
+    }
+
+    // ── Spreadsheet bundle ─────────────────────────────────────────────────
+    if (url.pathname === "/sheet.js" || url.pathname === "/sheet.css") {
+      const asset = (await sheetAssets).get(url.pathname);
+      return asset ? serveAsset(req, asset) : new Response("Spreadsheet unavailable", { status: 503 });
     }
 
     // ── Static files ───────────────────────────────────────────────────────
