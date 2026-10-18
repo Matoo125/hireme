@@ -1,0 +1,8 @@
+# Hand corrections to scraped jobs, kept across scrapes. See
+# scrapers/overrides.py. One table per job id, e.g.
+#
+#   ["693b22fe938f"]  # Human Resources Associate, Centre for Effective Altruism
+#   close_date = 2026-11-30
+#   salary_range = "$79,200 - $90,000 per year"
+#
+# Find an id: python3 -m scrapers.overrides find <words from title or org>

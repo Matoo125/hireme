@@ -183,4 +183,28 @@ salary text (the originals stay in `tags` and `salary_range`):
   the like leave all four empty. The scrape log prints how many salaries
   were read and how many weren't.
 
+## Hand corrections
+
+When a board gets a job wrong (a stale close date, a salary in the wrong
+field), put the right value in `overrides.toml`, by job id, instead of
+editing `jobs.csv`, which the next scrape rewrites:
+
+```toml
+["693b22fe938f"]  # Human Resources Associate, Centre for Effective Altruism
+close_date = 2026-11-30
+salary_range = "$79,200 - $90,000 per year"
+```
+
+- Find the id: `python3 -m scrapers.overrides find human resources`.
+- Any column but `id` can be set. Corrections are applied after
+  deduplication and before the typed columns and salary numbers are
+  derived, so fixing `tags` or `salary_range` fixes those too; setting a
+  derived column (`salary_period`, `location`, ...) directly wins.
+- Commit the file, then re-run the scrape (`sudo systemctl start
+  hireme-scrape.service` on the server) to see the change.
+- The scrape log names entries whose job wasn't scraped this time (closed,
+  or its link and so its id changed) and values the boards now give by
+  themselves, so either can be deleted. A broken file is reported as a
+  problem (the unit fails) and the scrape carries on without it.
+
 Tests: `python3 -m unittest` (in `tests/`).

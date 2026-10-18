@@ -12,7 +12,8 @@ Each board is scraped by its own module in scrapers/, normalized to a
 common schema, cleaned up where boards spell the same tag or organization
 differently (scrapers/normalize.py), then merged and deduplicated
 (scrapers/dedupe.py) since the same role is often cross-posted to more
-than one board. Finally the tags are sorted into typed columns
+than one board. Hand corrections from overrides.toml are applied
+(scrapers/overrides.py), then the tags are sorted into typed columns
 (scrapers/tag_fields.py) and the salary text read into numbers
 (scrapers/salary.py).
 """
@@ -31,6 +32,7 @@ from scrapers import (
 from scrapers.common import FIELDNAMES
 from scrapers.dedupe import merge_duplicates
 from scrapers.normalize import normalize_jobs
+from scrapers.overrides import OverridesError, apply_override, load_overrides
 from scrapers.salary import parse_salary
 from scrapers.tag_fields import classify_tags
 
@@ -42,6 +44,13 @@ SCRAPERS = [
 ]
 
 
+def derive(job):
+    """The columns computed from tags and salary_range."""
+    fields, _ = classify_tags(job.get("tags"))
+    fields.update(parse_salary(job.get("salary_range")))
+    return fields
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -49,6 +58,11 @@ def main():
         "--output",
         default="jobs.csv",
         help="Output CSV path (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--overrides",
+        default="overrides.toml",
+        help="Hand corrections, by job id (default: %(default)s)",
     )
     args = parser.parse_args()
 
@@ -76,13 +90,20 @@ def main():
     merged = merge_duplicates(all_jobs)
     print(f"Total after dedup: {len(merged)}")
 
+    try:
+        overrides = load_overrides(args.overrides)
+    except OverridesError as exc:
+        print(f"  {args.overrides} not applied: {exc}", file=sys.stderr)
+        problems.append(f"{args.overrides}: {exc}")
+        overrides = {}
+
     unknown_tags = Counter()
     unread_salaries = []
+    redundant = []
     for job in merged:
-        fields, unknown = classify_tags(job.get("tags"))
-        job.update(fields)
-        unknown_tags.update(unknown)
-        job.update(parse_salary(job.get("salary_range")))
+        override = overrides.get(job["id"], {})
+        redundant += [f"{job['id']}.{f}" for f in apply_override(job, override, derive)]
+        unknown_tags.update(classify_tags(job.get("tags"))[1])
         if job.get("salary_range", "").strip() and not (job["salary_min"] or job["salary_max"]):
             unread_salaries.append(job["salary_range"].strip())
     # Not failures: a new tag stays in `tags`, an unread salary in salary_range.
@@ -90,6 +111,15 @@ def main():
     if unknown_tags:
         listed = ", ".join(f"{t} ({n})" for t, n in unknown_tags.most_common())
         print(f"Tags not in scrapers/tag_fields.py: {listed}")
+    ids = {j["id"] for j in merged}
+    applied = [i for i in overrides if i in ids]
+    print(f"Overrides applied to {len(applied)} jobs")
+    # Also not failures: listed so stale entries can be deleted from the file.
+    stale = [i for i in overrides if i not in applied]
+    if stale:
+        print(f"Overrides for jobs not in this scrape: {', '.join(stale)}")
+    if redundant:
+        print(f"Overrides the scrape now matches: {', '.join(redundant)}")
     print(f"Salaries read: {sum(1 for j in merged if j['salary_min'] or j['salary_max'])}, "
           f"not read: {len(unread_salaries)} {sorted(set(unread_salaries))}")
 
@@ -108,7 +138,7 @@ def main():
     # failed exit status is what shows up in `systemctl --failed` / `systemctl status
     # hireme-scrape.service`, instead of the run silently reporting success either way.
     if problems:
-        print(f"\n{len(problems)} board(s) had problems this run:", file=sys.stderr)
+        print(f"\n{len(problems)} problem(s) this run:", file=sys.stderr)
         for p in problems:
             print(f"  - {p}", file=sys.stderr)
         sys.exit(1)
