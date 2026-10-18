@@ -1070,7 +1070,7 @@ function updateDescriptionToggles() {
 //
 // The same filtered list as the cards, as a spreadsheet: one row per job, a
 // column per field, sortable by clicking a header, and downloadable as CSV.
-// (It replaces the public Airtable view, which the free plan's API quota
+// (It replaced the public Airtable view, which the free plan's API quota
 // couldn't keep in sync.) The layout choice is remembered per browser, and
 // ?layout=table links straight to it.
 

@@ -1,22 +1,17 @@
 #!/bin/bash
-# Run the daily scrape, then always sync jobs.csv to Airtable afterward -
-# even if a board failed, since scrape_jobs.py still writes jobs.csv from
-# whichever boards succeeded and exits non-zero only to flag the degraded
-# run (see scrape_jobs.py). Chaining via systemd ExecStart= lines would
-# skip the sync whenever any board fails, so this wrapper decouples the two
-# while still surfacing either failure to systemd for `systemctl --failed`.
+# Run the daily scrape, then commit and push the refreshed jobs.csv, so the
+# repo snapshot (and the deployed copy, via auto-deploy) always matches the
+# live data instead of drifting until someone commits manually.
 #
-# The refreshed jobs.csv is also committed and pushed to git, so the repo
-# snapshot (and the deployed copy, via auto-deploy) always matches the live
-# data instead of drifting until someone commits manually.
+# The commit happens even if a board failed, since scrape_jobs.py still
+# writes jobs.csv from whichever boards succeeded and exits non-zero only to
+# flag the degraded run (see scrape_jobs.py); that status is passed on to
+# systemd at the end, for `systemctl --failed`.
 set -uo pipefail
 cd "$(dirname "$0")"
 
 python3 scrape_jobs.py -o jobs.csv
 scrape_status=$?
-
-python3 sync_airtable.py -i jobs.csv
-sync_status=$?
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
@@ -35,7 +30,4 @@ else
     echo "committed and pushed jobs.csv"
 fi
 
-if [ "$sync_status" -ne 0 ]; then
-    exit "$sync_status"
-fi
 exit "$scrape_status"

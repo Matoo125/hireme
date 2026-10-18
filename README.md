@@ -89,8 +89,8 @@ are plain textareas.
   sideways. Click a header to sort by it (again to reverse; the sort
   dropdown resets it), click a row to show its long cells in full, and
   "Download CSV" saves exactly the rows shown, with liked/not-relevant
-  and application status. It replaces the public Airtable view as the
-  way to see everything at once. The choice of layout is remembered in
+  and application status. It replaced the public Airtable view (and
+  its sync) as the way to see everything at once. The choice of layout is remembered in
   `localStorage`.
 - **Add a job by link** (logged in only): paste a URL and the server
   fetches it to fill in a title (`og:title`/`<title>`, falling back to
