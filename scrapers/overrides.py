@@ -368,7 +368,8 @@ def main():
             sys.exit(2)
         if args.commit:
             title = row.get("title") or args.job_id
-            commit([args.overrides, args.jobs], f"Correct {title}: {', '.join(patch)}")
+            verb = "Undo correction to" if all(v is None for v in patch.values()) else "Correct"
+            commit([args.overrides, args.jobs], f"{verb} {title}: {', '.join(patch)}")
     json.dump(row, sys.stdout, ensure_ascii=False)
 
 
