@@ -17,6 +17,18 @@ const CUSTOM_JOBS_DIR = path.join(ROOT, "..", "data", "custom-jobs");
 
 const MAX_CV_SIZE = 10 * 1024 * 1024; // 10 MB
 
+// Hand corrections (scrapers/overrides.py): who may make them from the grid,
+// and the files `python3 -m scrapers.overrides set` reads and writes.
+const ADMIN_USER_IDS = new Set(
+  (process.env.ADMIN_USER_IDS ?? "").split(",").map((s) => s.trim()).filter(Boolean).map(Number)
+);
+const REPO_DIR = path.join(ROOT, "..");
+const OVERRIDES_PATH = process.env.OVERRIDES_PATH ?? path.join(REPO_DIR, "overrides.toml");
+const SCRAPED_PATH = process.env.SCRAPED_JSON ?? path.join(REPO_DIR, "data", "scraped.json");
+// Commit and push each correction (production), so the checkout stays clean
+// for deploys.
+const OVERRIDES_COMMIT = process.env.OVERRIDES_COMMIT === "1";
+
 // ── JWT verification ─────────────────────────────────────────────────────────
 
 const AUTH_ISSUER = (process.env.AUTH_ISSUER ?? "https://api.altfresh.sk").replace(/\/$/, "");
@@ -34,6 +46,36 @@ async function verifyToken(
     id: Number(payload.sub),
     username: typeof payload.username === "string" ? payload.username : null,
   };
+}
+
+// ── Hand corrections ─────────────────────────────────────────────────────────
+
+let overridesQueue: Promise<unknown> = Promise.resolve();
+
+/** Run `scrapers.overrides set` for one job, one call at a time. */
+function setOverrides(
+  jobId: string,
+  patch: Record<string, string | null>
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  const run = async () => {
+    const proc = Bun.spawn(
+      [
+        "python3", "-m", "scrapers.overrides", "set", jobId,
+        "--jobs", CSV_PATH, "--overrides", OVERRIDES_PATH, "--scraped", SCRAPED_PATH,
+        ...(OVERRIDES_COMMIT ? ["--commit"] : []),
+      ],
+      { cwd: REPO_DIR, stdin: new Blob([JSON.stringify(patch)]), stdout: "pipe", stderr: "pipe" }
+    );
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    return { code, stdout, stderr };
+  };
+  const result = overridesQueue.then(run, run);
+  overridesQueue = result.catch(() => {});
+  return result;
 }
 
 // ── CSV parsing ──────────────────────────────────────────────────────────────
@@ -287,6 +329,55 @@ Bun.serve({
           { status: 500 }
         );
       }
+    }
+
+    // ── Admin: hand corrections ────────────────────────────────────────────
+
+    if (url.pathname === "/api/admin" || url.pathname.startsWith("/api/overrides/")) {
+      let user: { id: number; username: string | null };
+      try {
+        user = await verifyToken(req.headers.get("authorization"));
+      } catch {
+        return Response.json({ error: "unauthorized" }, { status: 401 });
+      }
+      const admin = ADMIN_USER_IDS.has(user.id);
+
+      if (url.pathname === "/api/admin" && req.method === "GET") {
+        return Response.json({ admin });
+      }
+
+      // PUT /api/overrides/:jobId  {field: value, field: null (undo)}
+      const jobId = decodeURIComponent(url.pathname.slice("/api/overrides/".length));
+      if (jobId && req.method === "PUT") {
+        if (!admin) return Response.json({ error: "forbidden" }, { status: 403 });
+        if (!/^[\w-]{1,64}$/.test(jobId)) {
+          return Response.json({ error: "Invalid job id" }, { status: 400 });
+        }
+        let patch: unknown;
+        try {
+          patch = await req.json();
+        } catch {
+          return Response.json({ error: "Expected JSON" }, { status: 400 });
+        }
+        if (
+          !patch || typeof patch !== "object" || Array.isArray(patch) ||
+          !Object.keys(patch).length ||
+          !Object.values(patch).every((v) => v === null || typeof v === "string")
+        ) {
+          return Response.json({ error: "Expected {field: text or null}" }, { status: 400 });
+        }
+        const { code, stdout, stderr } = await setOverrides(jobId, patch as Record<string, string | null>);
+        if (code === 0) {
+          if (stderr.trim()) console.warn(`overrides ${jobId}: ${stderr.trim()}`);
+          return new Response(stdout, { headers: { "Content-Type": "application/json" } });
+        }
+        const error = stderr.trim().split("\n").pop() || `exit ${code}`;
+        if (code !== 2 && code !== 3) console.error(`overrides ${jobId}: ${stderr.trim()}`);
+        const status = code === 2 ? 400 : code === 3 ? 404 : 500;
+        return Response.json({ error }, { status });
+      }
+
+      return new Response("Method not allowed", { status: 405 });
     }
 
     // ── CV endpoints ───────────────────────────────────────────────────────

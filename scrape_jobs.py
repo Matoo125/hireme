@@ -12,14 +12,13 @@ Each board is scraped by its own module in scrapers/, normalized to a
 common schema, cleaned up where boards spell the same tag or organization
 differently (scrapers/normalize.py), then merged and deduplicated
 (scrapers/dedupe.py) since the same role is often cross-posted to more
-than one board. Hand corrections from overrides.toml are applied
-(scrapers/overrides.py), then the tags are sorted into typed columns
-(scrapers/tag_fields.py) and the salary text read into numbers
-(scrapers/salary.py).
+than one board. The result is kept in data/scraped.json, then hand
+corrections from overrides.toml are applied (scrapers/overrides.py), the
+tags sorted into typed columns (scrapers/tag_fields.py) and the salary
+text read into numbers (scrapers/salary.py).
 """
 
 import argparse
-import csv
 import sys
 from collections import Counter
 
@@ -29,11 +28,9 @@ from scrapers import (
     eighty_thousand_hours,
     probably_good,
 )
-from scrapers.common import FIELDNAMES
 from scrapers.dedupe import merge_duplicates
 from scrapers.normalize import normalize_jobs
-from scrapers.overrides import OverridesError, apply_override, load_overrides
-from scrapers.salary import parse_salary
+from scrapers.overrides import OverridesError, finish, load_overrides, save_scraped, write_csv
 from scrapers.tag_fields import classify_tags
 
 SCRAPERS = [
@@ -42,13 +39,6 @@ SCRAPERS = [
     ("EA Opportunities Board", ea_opportunities.fetch_jobs),
     ("Animal Advocacy Careers", animal_advocacy_careers.fetch_jobs),
 ]
-
-
-def derive(job):
-    """The columns computed from tags and salary_range."""
-    fields, _ = classify_tags(job.get("tags"))
-    fields.update(parse_salary(job.get("salary_range")))
-    return fields
 
 
 def main():
@@ -63,6 +53,11 @@ def main():
         "--overrides",
         default="overrides.toml",
         help="Hand corrections, by job id (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--scraped",
+        default="data/scraped.json",
+        help="Where to keep the jobs as scraped, for edits from the web app (default: %(default)s)",
     )
     args = parser.parse_args()
 
@@ -89,6 +84,7 @@ def main():
     print(f"Total before dedup: {len(all_jobs)}")
     merged = merge_duplicates(all_jobs)
     print(f"Total after dedup: {len(merged)}")
+    save_scraped(args.scraped, merged)
 
     try:
         overrides = load_overrides(args.overrides)
@@ -97,12 +93,10 @@ def main():
         problems.append(f"{args.overrides}: {exc}")
         overrides = {}
 
+    merged, redundant = finish(merged, overrides)
     unknown_tags = Counter()
     unread_salaries = []
-    redundant = []
     for job in merged:
-        override = overrides.get(job["id"], {})
-        redundant += [f"{job['id']}.{f}" for f in apply_override(job, override, derive)]
         unknown_tags.update(classify_tags(job.get("tags"))[1])
         if job.get("salary_range", "").strip() and not (job["salary_min"] or job["salary_max"]):
             unread_salaries.append(job["salary_range"].strip())
@@ -123,11 +117,7 @@ def main():
     print(f"Salaries read: {sum(1 for j in merged if j['salary_min'] or j['salary_max'])}, "
           f"not read: {len(unread_salaries)} {sorted(set(unread_salaries))}")
 
-    with open(args.output, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
-        writer.writeheader()
-        for job in merged:
-            writer.writerow(job)
+    write_csv(args.output, merged)
 
     print(f"Wrote {len(merged)} jobs to {args.output}")
 

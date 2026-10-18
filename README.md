@@ -186,8 +186,10 @@ salary text (the originals stay in `tags` and `salary_range`):
 ## Hand corrections
 
 When a board gets a job wrong (a stale close date, a salary in the wrong
-field), put the right value in `overrides.toml`, by job id, instead of
-editing `jobs.csv`, which the next scrape rewrites:
+field), the right value goes in `overrides.toml`, by job id, instead of
+`jobs.csv`, which the next scrape rewrites. Admins (account ids in the
+server's `ADMIN_USER_IDS`) just edit the cell in the table layout; anyone
+can also edit the file:
 
 ```toml
 ["693b22fe938f"]  # Human Resources Associate, Centre for Effective Altruism
@@ -200,8 +202,19 @@ salary_range = "$79,200 - $90,000 per year"
   deduplication and before the typed columns and salary numbers are
   derived, so fixing `tags` or `salary_range` fixes those too; setting a
   derived column (`salary_period`, `location`, ...) directly wins.
-- Commit the file, then re-run the scrape (`sudo systemctl start
-  hireme-scrape.service` on the server) to see the change.
+- `jobs.csv` gains a `corrected` column naming the columns set, and the
+  grid marks those cells with a corner triangle.
+- Edited by hand: commit the file, then re-run the scrape (`sudo systemctl
+  start hireme-scrape.service` on the server) to see the change.
+- Edited in the grid: `PUT /api/overrides/<id>` runs `python3 -m
+  scrapers.overrides set`, which edits the file in place (keeping its
+  comments), rebuilds `jobs.csv` from `data/scraped.json` (the last
+  scrape's jobs before corrections) without scraping again, and, with
+  `OVERRIDES_COMMIT=1`, commits and pushes both files so the checkout
+  stays clean for deploys. Paste works too, a cell at a time. Typing the
+  board's own value back, or right-click "Undo hand correction", removes
+  a correction. Jobs added by link can't be corrected (they're not
+  scraped). Edits and scrapes take turns on `data/.jobs.lock`.
 - The scrape log names entries whose job wasn't scraped this time (closed,
   or its link and so its id changed) and values the boards now give by
   themselves, so either can be deleted. A broken file is reported as a

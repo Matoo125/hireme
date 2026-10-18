@@ -13,7 +13,8 @@ HTML_TAG_RE = re.compile(r"<[^>]+>")
 # Note: "id" is added later by scrapers.dedupe (it's derived from the
 # post-merge record, not something individual board scrapers set), and
 # the columns from "salary_min" on are derived after merging, from
-# salary_range (scrapers.salary) and tags (scrapers.tag_fields).
+# salary_range (scrapers.salary) and tags (scrapers.tag_fields);
+# "corrected" names the columns overrides.toml set (scrapers.overrides).
 FIELDNAMES = [
     "id",
     "source",
@@ -38,6 +39,7 @@ FIELDNAMES = [
     "cause_area",
     "skills",
     "other_tags",
+    "corrected",
 ]
 
 

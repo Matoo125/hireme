@@ -61,6 +61,7 @@ function logout() {
   }
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  isAdmin = false;
   cachedJwt = null;
   jwtExpiresAt = 0;
   updateAuthUI();
@@ -220,6 +221,37 @@ const clearGridFiltersEl = document.getElementById("clearGridFilters");
 
 let jobs = [];
 const activeTags = new Set();
+
+// Admins (ADMIN_USER_IDS on the server) can correct scraped values in the
+// grid. Corrections go to overrides.toml (scrapers/overrides.py), so the next
+// scrape keeps them.
+let isAdmin = false;
+
+async function loadAdmin() {
+  if (!isLoggedIn()) return;
+  try {
+    const jwt = await getJwt();
+    const res = await fetch("/api/admin", { headers: { Authorization: `Bearer ${jwt}` } });
+    const admin = res.ok && (await res.json()).admin === true;
+    if (admin !== isAdmin) {
+      isAdmin = admin;
+      render();
+    }
+  } catch {}
+}
+
+/** Save {field: value, or null to undo} for a job; returns its new row. */
+async function saveCorrection(jobId, patch) {
+  const jwt = await getJwt();
+  const res = await fetch(`/api/overrides/${encodeURIComponent(jobId)}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
 const activeSources = new Set();
 
 // Liked/hidden state persists in localStorage and, when logged in,
@@ -1128,6 +1160,22 @@ function splitList(value) {
   return (value || "").split(";").map((v) => v.trim()).filter(Boolean);
 }
 
+// Grid column → the jobs.csv column a correction to it sets.
+const CORRECTABLE = {
+  title: "title",
+  organization: "organization_name",
+  posted: "publication_date",
+  closes: "close_date",
+  ...Object.fromEntries(TYPED_COLUMNS.map(([name]) => [name, name])),
+  salary: "salary_range",
+  salary_min: "salary_min",
+  salary_max: "salary_max",
+  salary_currency: "salary_currency",
+  salary_period: "salary_period",
+  other_tags: "other_tags",
+  description: "description",
+};
+
 const periodLabel = (job) => PERIOD_LABELS[job.salary_period] || job.salary_period || "";
 const formatPay = (value) => (value === "" || value == null ? "" : Number(value).toLocaleString("en-US"));
 
@@ -1403,6 +1451,7 @@ function buildGrid(lib, list) {
   sheetEl.classList.add("sheet--grid");
   const byId = new Map(list.map((job) => [job.id, job]));
   const loggedIn = isLoggedIn();
+  const admin = isAdmin;
   const linkCell = (field, textField) => (cell, value, x, y, instance) => {
     const job = byId.get(instance.getValueFromCoords(0, y));
     const href = job?.[field];
@@ -1417,6 +1466,21 @@ function buildGrid(lib, list) {
   const payCell = (cell, value) => {
     cell.textContent = formatPay(value);
   };
+  // A hand-corrected cell gets a corner mark (for admins, right-click undoes it).
+  const markCorrected = (render) => (cell, value, x, y, instance) => {
+    cell.removeAttribute("title");
+    render?.(cell, value, x, y, instance);
+    const job = byId.get(instance.getValueFromCoords(0, y));
+    const corrected = Boolean(job && splitList(job.corrected).includes(CORRECTABLE[columns[x].name]));
+    cell.classList.toggle("cell--corrected", corrected);
+    if (corrected) {
+      const note = admin ? "Corrected by hand (right-click to undo)" : "Corrected by hand";
+      cell.title = cell.title ? `${cell.title}\n\n${note}` : note;
+    }
+  };
+  // Every value a column has, for the admins' dropdowns.
+  const valuesOf = (name) => [...new Set(jobs.flatMap((job) => splitList(job[name])))]
+    .sort((a, b) => a.localeCompare(b));
 
   const columns = [
     { name: "id", type: "hidden" },
@@ -1434,7 +1498,9 @@ function buildGrid(lib, list) {
     { name: "board", title: "Board", readOnly: true, width: 150 },
     { name: "posted", title: "Posted", readOnly: true, width: 92 },
     { name: "closes", title: "Closes", readOnly: true, width: 92 },
-    ...TYPED_COLUMNS.map(([name, title, width]) => ({ name, title, readOnly: true, width, render: fullTextTitle })),
+    ...TYPED_COLUMNS.map(([name, title, width]) => (admin
+      ? { name, title, width, type: "dropdown", multiple: true, autocomplete: true, source: valuesOf(name) }
+      : { name, title, readOnly: true, width, render: fullTextTitle })),
     { name: "salary", title: "Salary", readOnly: true, width: 150, render: fullTextTitle },
     // Shown with thousands separators; sorting() below reads them as numbers.
     // (Not type "numeric": Jspreadsheet sorts those as Number(value), which
@@ -1442,14 +1508,23 @@ function buildGrid(lib, list) {
     { name: "salary_min", title: "Min", readOnly: true, width: 90, align: "right", render: payCell },
     { name: "salary_max", title: "Max", readOnly: true, width: 90, align: "right", render: payCell },
     { name: "salary_currency", title: "Currency", readOnly: true, width: 76 },
-    { name: "salary_period", title: "Period", readOnly: true, width: 86 },
+    {
+      name: "salary_period", title: "Period", readOnly: true, width: 86, type: "dropdown",
+      source: [{ id: "", name: "" }, ...Object.entries(PERIOD_LABELS).map(([id, name]) => ({ id, name }))],
+    },
     { name: "other_tags", title: "Other tags", readOnly: true, width: 170, render: fullTextTitle },
     { name: "description", title: "Description", readOnly: true, width: 360, render: fullTextTitle },
   ];
-  for (const column of columns) column.align ??= column.type === "checkbox" ? "center" : "left";
+  for (const column of columns) {
+    column.align ??= column.type === "checkbox" ? "center" : "left";
+    if (CORRECTABLE[column.name]) {
+      column.readOnly = !admin;
+      column.render = markCorrected(column.render);
+    }
+  }
   const col = Object.fromEntries(columns.map((c, i) => [c.name, i]));
 
-  const data = list.map((job) => {
+  const rowOf = (job) => {
     const app = applications.get(job.id);
     const row = {
       id: job.id,
@@ -1466,16 +1541,49 @@ function buildGrid(lib, list) {
       salary_min: job.salary_min === "" || job.salary_min == null ? "" : Number(job.salary_min),
       salary_max: job.salary_max === "" || job.salary_max == null ? "" : Number(job.salary_max),
       salary_currency: job.salary_currency || "",
-      salary_period: periodLabel(job),
-      other_tags: splitList(job.other_tags).join(", "),
+      salary_period: job.salary_period || "",
+      // Admins edit these as text, where ", " would be ambiguous ("Washington, DC").
+      other_tags: splitList(job.other_tags).join(admin ? "; " : ", "),
       description: job.description || "",
     };
-    for (const [name] of TYPED_COLUMNS) row[name] = splitList(job[name]).join(", ");
+    // A multiple dropdown's value is its picks joined by ";".
+    for (const [name] of TYPED_COLUMNS) row[name] = splitList(job[name]).join(admin ? ";" : ", ");
     return columns.map((c) => row[c.name]);
-  });
+  };
+  const data = list.map(rowOf);
 
   // Set while the grid itself writes a cell, so onchange doesn't treat it as an edit.
   let writing = false;
+
+  // Show a job's row as it now is: after a correction the server re-derives
+  // the salary numbers and typed columns too.
+  const refreshRow = (instance, id) => {
+    const job = byId.get(id);
+    const rows = instance.options.data.length;
+    let y = 0;
+    while (y < rows && instance.getValueFromCoords(0, y) !== id) y++;
+    if (!job || y === rows) return;
+    const values = rowOf(job);
+    writing = true;
+    try {
+      columns.forEach((c, x) => {
+        if (CORRECTABLE[c.name]) instance.setValueFromCoords(x, y, values[x], true);
+      });
+    } finally {
+      writing = false;
+    }
+  };
+  const correct = async (instance, id, patch) => {
+    try {
+      Object.assign(byId.get(id), await saveCorrection(id, patch));
+    } catch (err) {
+      alert(`The correction wasn't saved: ${err.message}`);
+    }
+    refreshRow(instance, id);
+  };
+  // Jobs added by link aren't scraped, so there's nothing to correct: they're
+  // edited by removing and adding them again.
+  const isCustom = (id) => byId.get(id)?.source === "custom";
 
   gridEl = document.createElement("div");
   sheetEl.replaceChildren(gridEl);
@@ -1527,7 +1635,11 @@ function buildGrid(lib, list) {
     about: false,
     allowExport: false,
     onbeforechange(instance, cell, x, y, value) {
-      if (writing || Number(x) !== col.status || value) return undefined;
+      if (writing) return undefined;
+      if (CORRECTABLE[columns[x].name] && isCustom(instance.getValueFromCoords(0, y))) {
+        return instance.getValueFromCoords(x, y);
+      }
+      if (Number(x) !== col.status || value) return undefined;
       // Clearing the status untracks the job, which would throw away its
       // notes and letter; that's done from the card, where they're visible.
       const app = applications.get(instance.getValueFromCoords(0, y));
@@ -1576,10 +1688,25 @@ function buildGrid(lib, list) {
           }
           break;
         }
-        default:
+        default: {
+          const field = CORRECTABLE[columns[x].name];
+          if (field && admin && !isCustom(id)) correct(instance, id, { [field]: String(value ?? "") });
           return;
+        }
       }
       renderViewOptions();
+    },
+    contextMenu(instance, x, y, e, items) {
+      const field = x == null ? undefined : CORRECTABLE[columns[x]?.name];
+      const id = y == null ? null : instance.getValueFromCoords(0, y);
+      const job = byId.get(id);
+      if (admin && field && job && splitList(job.corrected).includes(field)) {
+        items.unshift(
+          { title: "Undo hand correction", onclick: () => correct(instance, id, { [field]: null }) },
+          { type: "line" },
+        );
+      }
+      return items;
     },
   });
   wireGridFilters(columns);
@@ -1673,6 +1800,7 @@ async function init() {
   loadPreferences();
   loadApplications();
   loadCustomJobs();
+  loadAdmin();
 }
 
 searchEl.addEventListener("input", render);

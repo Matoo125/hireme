@@ -10,6 +10,13 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 
+# Held for the whole run: edits from the web app's grid (scrapers/overrides.py
+# set) take the same lock, so neither writes jobs.csv or commits mid-way
+# through the other.
+mkdir -p data
+exec 9>data/.jobs.lock
+flock 9
+
 python3 scrape_jobs.py -o jobs.csv
 scrape_status=$?
 
