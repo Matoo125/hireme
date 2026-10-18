@@ -2,7 +2,8 @@
   "name": "80000hours-jobs-web",
   "private": true,
   "scripts": {
-    "start": "bun run server.ts"
+    "start": "bun run server.ts",
+    "test:browser": "bun tests/browser/run.ts"
   },
   "dependencies": {
     "@research/editor": "git+ssh://git@github.com/Matoo125/editor.git#v0.1.0",

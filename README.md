@@ -204,8 +204,9 @@ salary_range = "$79,200 - $90,000 per year"
   derived column (`salary_period`, `location`, ...) directly wins.
 - `jobs.csv` gains a `corrected` column naming the columns set, and the
   grid marks those cells with a corner triangle.
-- Edited by hand: commit the file, then re-run the scrape (`sudo systemctl
-  start hireme-scrape.service` on the server) to see the change.
+- Edited by hand: `python3 -m scrapers.overrides rebuild` applies the file
+  to `jobs.csv` without scraping again (it rebuilds from
+  `data/scraped.json`); then commit both.
 - Edited in the grid: `PUT /api/overrides/<id>` runs `python3 -m
   scrapers.overrides set`, which edits the file in place (keeping its
   comments), rebuilds `jobs.csv` from `data/scraped.json` (the last
@@ -220,4 +221,15 @@ salary_range = "$79,200 - $90,000 per year"
   themselves, so either can be deleted. A broken file is reported as a
   problem (the unit fails) and the scrape carries on without it.
 
-Tests: `python3 -m unittest` (in `tests/`).
+## Tests
+
+- `python3 -m unittest` (in `tests/`): the scrapers' clean-up,
+  deduplication, typed columns, salary parsing and overrides.
+- `cd web && bun run test:browser` (or `bun tests/browser/run.ts grid
+  corrections` for some): the web app in headless Chromium, set
+  `CHROMIUM` if it isn't on the PATH as `chromium`. The runner starts the
+  server on `tests/browser/fixture/scraped.json` (98 jobs sampled from a
+  real scrape, covering every board and kind of salary), a stand-in for
+  altfresh's sign-in with an admin and a plain user, and the browser;
+  each `tests/browser/*.js` is one test run in the page, with the helpers
+  listed at the top of `run.ts`. Nothing outside a temp dir is touched.

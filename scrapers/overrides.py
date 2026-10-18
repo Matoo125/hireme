@@ -23,7 +23,11 @@ which edits overrides.toml in place (keeping its comments; null removes a
 correction, and so does a value the scrape gives by itself), rebuilds
 jobs.csv from data/scraped.json and prints the job's new row as JSON.
 With --commit it also commits both files and pushes, since uncommitted
-changes would stop the next deploy.
+changes would stop the next deploy. After editing overrides.toml by hand,
+
+    python3 -m scrapers.overrides rebuild
+
+does the same rebuild of jobs.csv, without scraping again.
 
 The scrape log names overrides whose job wasn't scraped this time (it
 closed, or its link changed and with it the id) and values the scrape now
@@ -34,6 +38,7 @@ Find a job's id with: python3 -m scrapers.overrides find <words from title or or
 """
 
 import argparse
+import contextlib
 import csv
 import datetime
 import fcntl
@@ -330,6 +335,15 @@ def _find(words, csv_path="jobs.csv"):
                 print(f"{job['id']}  {job['title']} - {job['organization_name']}")
 
 
+@contextlib.contextmanager
+def _jobs_lock(scraped_path):
+    """The lock scrape_and_sync.sh holds, so a scrape and an edit don't
+    write jobs.csv over each other."""
+    with open(Path(scraped_path).parent / ".jobs.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
 def main():
     parser = argparse.ArgumentParser(prog="python3 -m scrapers.overrides")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -342,10 +356,31 @@ def main():
     edit.add_argument("--overrides", default="overrides.toml")
     edit.add_argument("--scraped", default="data/scraped.json")
     edit.add_argument("--commit", action="store_true", help="commit and push overrides.toml and jobs.csv")
+    rebuild = sub.add_parser("rebuild", help="rebuild jobs.csv from the last scrape and overrides.toml")
+    rebuild.add_argument("--jobs", default="jobs.csv")
+    rebuild.add_argument("--overrides", default="overrides.toml")
+    rebuild.add_argument("--scraped", default="data/scraped.json")
     args = parser.parse_args()
 
     if args.command == "find":
         _find(args.words, args.jobs)
+        return
+    if args.command == "rebuild":
+        with _jobs_lock(args.scraped):
+            try:
+                overrides = load_overrides(args.overrides)
+            except OverridesError as exc:
+                sys.exit(f"{args.overrides}: {exc}")
+            scraped = json.loads(Path(args.scraped).read_text(encoding="utf-8"))
+            rows, redundant = finish(scraped, overrides)
+            write_csv(args.jobs, rows)
+        ids = {row["id"] for row in rows}
+        print(f"Wrote {len(rows)} jobs to {args.jobs}, {sum(1 for i in overrides if i in ids)} corrected")
+        stale = [i for i in overrides if i not in ids]
+        if stale:
+            print(f"Overrides for jobs not in the last scrape: {', '.join(stale)}")
+        if redundant:
+            print(f"Overrides the scrape now matches: {', '.join(redundant)}")
         return
     try:
         patch = json.load(sys.stdin)
@@ -353,11 +388,7 @@ def main():
             raise ValueError
     except ValueError:
         sys.exit('expected a JSON object like {"close_date": "2026-11-30"} on stdin')
-    # The same lock scrape_and_sync.sh holds, so a scrape and an edit
-    # don't write jobs.csv over each other.
-    lock_path = Path(args.scraped).parent / ".jobs.lock"
-    with open(lock_path, "w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with _jobs_lock(args.scraped):
         try:
             row = set_overrides(args.job_id, patch, args.overrides, args.scraped, args.jobs)
         except UnknownJob as exc:
