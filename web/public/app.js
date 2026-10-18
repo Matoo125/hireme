@@ -216,6 +216,7 @@ const layoutEl = document.getElementById("layout");
 const sheetEl = document.getElementById("sheet");
 const detailTogglesEl = document.getElementById("detailToggles");
 const downloadCsvEl = document.getElementById("downloadCsv");
+const clearGridFiltersEl = document.getElementById("clearGridFilters");
 
 let jobs = [];
 const activeTags = new Set();
@@ -1255,6 +1256,108 @@ function renderSheet(list) {
 
 const BOOL = (value) => value === true || value === "true" || value === 1 || value === "1";
 
+// ── Grid column filters ──────────────────────────────────────────────────────
+//
+// The grid's filter row, but filtering done here rather than by Jspreadsheet,
+// whose CE filter keeps one column at a time and offers whole cell values:
+// "80,000 Hours, Probably Good" rather than each board. Here a column filter
+// is a set of single values (one board, one tag), a job passes when any of
+// its values is picked (OR), and filters on different columns combine (AND).
+// They're applied in render() with the page's other filters, so the count,
+// the CSV export and the grid itself all agree. Table layout only.
+
+/** Column name → picked values. "" stands for a blank cell. */
+const gridFilters = new Map();
+const FILTERABLE = new Set(["liked", "hidden", "title", "status", "organization", "board", "posted", "closes", "salary", "tags"]);
+const yesNo = (on) => (on ? "Yes" : "No");
+const orBlank = (values) => (values.length ? values : [""]);
+
+/** A job's values in a filterable column. */
+function filterValues(job, name) {
+  switch (name) {
+    case "liked": return [yesNo(likedJobs.has(job.id))];
+    case "hidden": return [yesNo(hiddenJobs.has(job.id))];
+    case "title": return [job.title || ""];
+    case "status": return [STATUS_LABELS[applications.get(job.id)?.status] || ""];
+    case "organization": return [job.organization_name || ""];
+    case "board": return orBlank(splitSources(job));
+    case "posted": return [job.publication_date || ""];
+    case "closes": return [job.close_date || ""];
+    case "salary": return [job.salary_range || ""];
+    case "tags": return orBlank(splitTags(job));
+    default: return [];
+  }
+}
+
+function matchesGridFilters(job, except) {
+  for (const [name, picked] of gridFilters) {
+    if (name !== except && !filterValues(job, name).some((v) => picked.has(v))) return false;
+  }
+  return true;
+}
+
+/** The jobs the page's other filters keep: what a column's options are counted from. */
+let gridBase = [];
+
+/** Open a column's filter: its values among the jobs the other filters keep, with counts. */
+function openGridFilter(td, name) {
+  const counts = new Map();
+  for (const job of gridBase) {
+    if (!matchesGridFilters(job, name)) continue;
+    for (const v of new Set(filterValues(job, name))) counts.set(v, (counts.get(v) || 0) + 1);
+  }
+  // A picked value nothing has any more stays listed, so it can be unpicked.
+  for (const v of gridFilters.get(name) || []) if (!counts.has(v)) counts.set(v, 0);
+  const data = [...counts]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([value, n]) => ({ id: value, name: `${value || "(Blank)"} (${n})` }));
+
+  const holder = document.createElement("div");
+  td.replaceChildren(holder);
+  td.classList.add("filter-open");
+  window.jSuites.dropdown(holder, {
+    data,
+    multiple: true,
+    autocomplete: true,
+    opened: true,
+    width: "100%",
+    position: true,
+    value: [...(gridFilters.get(name) || [])],
+    onclose(el) {
+      const picked = (el.dropdown.getValue(true) || []).map(String);
+      if (picked.length) gridFilters.set(name, new Set(picked));
+      else gridFilters.delete(name);
+      render();
+    },
+  });
+}
+
+/** Label the grid's filter row with what's picked, and take its clicks over from Jspreadsheet. */
+function wireGridFilters(columns) {
+  const row = grid?.filter;
+  if (!row) return;
+  for (const td of row.querySelectorAll("td.jss_column_filter")) {
+    const name = columns[Number(td.dataset.x)]?.name;
+    const picked = gridFilters.get(name);
+    if (picked) {
+      td.textContent = [...picked].map((v) => v || "(Blank)").join(", ");
+      td.title = td.textContent;
+      td.classList.add("filter-active");
+    }
+    if (!FILTERABLE.has(name)) td.classList.add("filter-none");
+  }
+  // Capture phase, so Jspreadsheet's own (document-level) filter never opens.
+  row.addEventListener("mousedown", (e) => {
+    if (e.target.closest(".jdropdown")) return; // a click inside an open filter
+    const td = e.target.closest("td.jss_column_filter");
+    if (!td) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const name = columns[Number(td.dataset.x)]?.name;
+    if (FILTERABLE.has(name)) openGridFilter(td, name);
+  }, true);
+}
+
 let prefsTimer = null;
 /** A paste can flip hundreds of checkboxes: send the preferences once. */
 function savePreferencesSoon() {
@@ -1410,6 +1513,7 @@ function buildGrid(lib, list) {
       renderViewOptions();
     },
   });
+  wireGridFilters(columns);
 }
 
 /** The rows on screen, in the order shown, as a CSV file. */
@@ -1423,17 +1527,10 @@ function downloadCsv() {
   const columns = sheetColumns().filter((c) => c.export !== false);
   const header = ["Liked", "Not relevant", ...columns.map((c) => c.label), "Link", "Organization URL"];
   const lines = [header.map(csvField).join(",")];
-  // The grid may have been re-sorted in place: export in its order, and only
-  // the rows its column filter keeps (`results`: their indices, or null when
-  // nothing is filtered).
+  // The grid may have been re-sorted in place: export in its order. (Its
+  // column filters are already applied: shownRows is what passed them.)
   const byId = new Map(shownRows.map((job) => [job.id, job]));
-  let rows = shownRows;
-  if (grid) {
-    const data = grid.getData();
-    rows = (grid.results ? grid.results.map((i) => data[i]) : data)
-      .map((row) => byId.get(row?.[0]))
-      .filter(Boolean);
-  }
+  const rows = grid ? grid.getData().map((row) => byId.get(row[0])).filter(Boolean) : shownRows;
   for (const job of rows) {
     lines.push([
       likedJobs.has(job.id) ? "yes" : "",
@@ -1455,13 +1552,16 @@ function downloadCsv() {
 
 function render() {
   const term = searchEl.value.trim().toLowerCase();
-  const filtered = jobs.filter(
+  const table = layoutEl.value === "table";
+  const base = jobs.filter(
     (j) =>
       matchesSearch(j, term) &&
       matchesActiveTags(j) &&
       matchesActiveSources(j) &&
       matchesView(j, viewEl.value)
   );
+  gridBase = table ? base : [];
+  const filtered = table && gridFilters.size ? base.filter((j) => matchesGridFilters(j)) : base;
   const sorted = sortJobs(filtered, sortEl.value);
 
   renderSourceFilters();
@@ -1473,12 +1573,14 @@ function render() {
   jobsEl.innerHTML = "";
   emptyEl.hidden = sorted.length > 0;
 
-  const table = layoutEl.value === "table";
   document.body.classList.toggle("layout-table", table);
   jobsEl.hidden = table;
   sheetEl.hidden = !table || !sorted.length;
   detailTogglesEl.hidden = table;
   downloadCsvEl.hidden = !table || !sorted.length;
+  // Shown even when the filters leave no rows (and so no grid to undo them in).
+  clearGridFiltersEl.hidden = !table || !gridFilters.size;
+  clearGridFiltersEl.textContent = `Clear column filters (${gridFilters.size})`;
   if (table) {
     shownRows = sorted;
     if (sorted.length) renderSheet(sorted);
@@ -1520,5 +1622,9 @@ layoutEl.addEventListener("change", () => {
   render();
 });
 downloadCsvEl.addEventListener("click", downloadCsv);
+clearGridFiltersEl.addEventListener("click", () => {
+  gridFilters.clear();
+  render();
+});
 
 init();

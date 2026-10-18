@@ -582,6 +582,16 @@ main {
 
 /* ── Table layout ─────────────────────────────────────────────────────── */
 
+.count-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.auth-btn--quiet {
+  background: var(--chip-bg);
+  color: var(--chip-fg);
+}
+
 .count-row {
   display: flex;
   align-items: baseline;
@@ -734,8 +744,10 @@ main {
   --menu_background_highlighted: var(--chip-bg);
   --menu_color: var(--fg);
   --menu_color_highlighted: var(--fg);
-  --selection: color-mix(in srgb, var(--accent) 18%, transparent);
-  --cursor: color-mix(in srgb, var(--accent) 10%, transparent);
+  /* Opaque, not a translucent tint: behind the cells is the library's white
+     table, which a tint over a dark page turns into near-white. */
+  --selection: color-mix(in srgb, var(--accent) 22%, var(--card-bg));
+  --cursor: color-mix(in srgb, var(--accent) 12%, var(--card-bg));
   font-size: 0.82rem;
 }
 
@@ -747,13 +759,65 @@ main {
   text-overflow: ellipsis;
 }
 
-.sheet--grid .jss_worksheet td a {
+.sheet--grid .jss_worksheet {
+  background-color: var(--card-bg);
+}
+
+/* The library colours links in selected cells plain "blue". */
+.sheet--grid .jss_worksheet > tbody > tr > td a,
+.sheet--grid .jss_worksheet > tbody > tr > td.highlight > a {
   color: var(--accent);
   text-decoration: none;
 }
 
 .sheet--grid .jss_worksheet td a:hover {
   text-decoration: underline;
+}
+
+/* The filter row: picked values in the accent colour; no filter on notes or
+   the description. */
+.sheet--grid .jss_worksheet td.jss_column_filter.filter-active {
+  color: var(--accent);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sheet--grid .jss_worksheet td.jss_column_filter.filter-none {
+  background-image: none;
+  cursor: default;
+}
+
+.sheet--grid .jss_worksheet td.jss_column_filter.filter-open {
+  padding: 0;
+  overflow: visible;
+}
+
+/* jSuites' filter dropdown, in the page's colours (it hard-codes white). */
+.sheet--grid .jdropdown-header,
+.sheet--grid .jdropdown input,
+.sheet--grid .jdropdown-default .jdropdown-header,
+.sheet--grid .jdropdown-default .jdropdown-container,
+.sheet--grid .jdropdown-default .jdropdown-content {
+  background-color: var(--card-bg);
+  color: var(--fg);
+  border-color: var(--border);
+}
+
+.sheet--grid .jdropdown-default .jdropdown-item {
+  color: var(--fg);
+}
+
+.sheet--grid .jdropdown-default .jdropdown-item:hover,
+.sheet--grid .jdropdown-default .jdropdown-cursor {
+  background-color: var(--chip-bg);
+  color: var(--fg);
+}
+
+.sheet--grid .jdropdown-default .jdropdown-selected {
+  background-color: var(--accent);
+  color: var(--card-bg);
 }
 
 /* Read-only cells: what the scraper owns. */

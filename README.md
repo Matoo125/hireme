@@ -88,15 +88,19 @@ are plain textareas.
   [Jspreadsheet CE](https://github.com/jspreadsheet/ce) (MIT), which
   `server.ts` serves as `/sheet.js` + `/sheet.css` and the page loads the
   first time the table is shown. Excel-style selection, copy/paste and
-  keyboard editing, per-column sorting and filters, the first columns
-  frozen. Only our own columns are editable: liked and not relevant, and
+  keyboard editing, per-column sorting, the first columns frozen. The
+  filter row under the headers is ours, not Jspreadsheet's (which filters
+  one column at a time, on whole cell values): each column offers its
+  single values with counts (one board, one tag), a job passes a column
+  when it has any picked value, and filters on several columns combine.
+  They apply with the page's other filters, so the count and the CSV
+  agree with the grid; "Clear column filters" resets them. Only our own columns are editable: liked and not relevant, and
   (logged in) the application's status and notes, which save exactly as
   the cards do; notes on an untracked job start tracking it, and clearing
   a status untracks it unless it has notes or a letter. The scraped
   columns are read-only, since the next scrape would overwrite them, and
   formulas are never evaluated. "Download CSV" saves what the grid
-  shows: its current order, and only the rows its column filter keeps
-  (Jspreadsheet CE filters one column at a time). If the library can't load, a plain read-only
+  shows, in its current order. If the library can't load, a plain read-only
   table (click a header to sort) shows instead. It replaced the public
   Airtable view (and its sync) as the way to see everything at once. The
   choice of layout is remembered in `localStorage`.
