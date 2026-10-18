@@ -9,8 +9,10 @@ into a single deduplicated CSV:
   - Animal Advocacy Careers  https://animaladvocacycareers.org/job-board/
 
 Each board is scraped by its own module in scrapers/, normalized to a
-common schema, then merged and deduplicated (scrapers/dedupe.py) since
-the same role is often cross-posted to more than one board.
+common schema, cleaned up where boards spell the same tag or organization
+differently (scrapers/normalize.py), then merged and deduplicated
+(scrapers/dedupe.py) since the same role is often cross-posted to more
+than one board.
 """
 
 import argparse
@@ -25,6 +27,7 @@ from scrapers import (
 )
 from scrapers.common import FIELDNAMES
 from scrapers.dedupe import merge_duplicates
+from scrapers.normalize import normalize_jobs
 
 SCRAPERS = [
     ("80,000 Hours", eighty_thousand_hours.fetch_jobs),
@@ -59,6 +62,11 @@ def main():
             problems.append(f"{name}: returned 0 jobs")
         all_jobs.extend(jobs)
 
+    all_jobs, cleaned = normalize_jobs(all_jobs)
+    print(
+        f"Cleaned up: {cleaned['tag_spellings_merged']} tag spellings merged "
+        f"({cleaned['tags']} tags left), {cleaned['org_names_changed']} organization names"
+    )
     print(f"Total before dedup: {len(all_jobs)}")
     merged = merge_duplicates(all_jobs)
     print(f"Total after dedup: {len(merged)}")

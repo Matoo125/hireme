@@ -5,14 +5,19 @@ treat two listings as the same job if either:
 
   1. their application links point to the same place (after stripping
      query strings/UTM params, scheme, and trailing slashes), or
-  2. they have the same organization name and the same job title
-     (both normalized), which catches cases where each board wraps the
-     link in its own tracking redirect.
+  2. they come from different boards and have the same organization
+     name and job title (both normalized; names are already cleaned up
+     by scrapers.normalize), which catches each board linking to its
+     own copy: an ATS page vs the org's careers page, a tracking
+     redirect, a locale in the path. Two listings on the *same* board
+     with the same title are kept apart: the board lists them as
+     separate jobs (e.g. one role in two locations, at two salaries).
 
+Matches chain: if A matches B and B matches C, all three are one job.
 Duplicates are merged into a single row: fields are filled in from
 whichever source has them (first-seen wins per field), tags are
 unioned, and a `sources` column records every board the job was found
-on.
+on. The merged row keeps the first-seen listing's id (see stable_id).
 """
 
 import hashlib
@@ -70,19 +75,53 @@ def _merge_tag_strings(tag_strings):
     return "; ".join(tags)
 
 
-def merge_duplicates(jobs):
-    groups = {}
-    order = []
-    for job in jobs:
-        key = _dedup_key(job)
-        if key not in groups:
-            groups[key] = []
-            order.append(key)
-        groups[key].append(job)
+def _duplicate_groups(jobs):
+    """Indices of jobs grouped into duplicates, each group in scrape order,
+    groups ordered by their first job."""
+    parent = list(range(len(jobs)))
 
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(i, j):
+        a, b = find(i), find(j)
+        if a != b:
+            # The earlier job stays the root, so a group's first job is its root.
+            parent[max(a, b)] = min(a, b)
+
+    by_url = {}
+    by_org_title = {}
+    for i, job in enumerate(jobs):
+        url = normalize_url(job.get("link", ""))
+        if url:
+            union(i, by_url.setdefault(url, i))
+        org = normalize_text(job.get("organization_name", ""))
+        title = normalize_text(job.get("title", ""))
+        if org and title:
+            by_org_title.setdefault((org, title), []).append(i)
+
+    for indices in by_org_title.values():
+        for i in indices:
+            for j in indices:
+                if j >= i:
+                    break
+                if jobs[i]["source"] != jobs[j]["source"]:
+                    union(i, j)
+                    break
+
+    groups = {}
+    for i in range(len(jobs)):
+        groups.setdefault(find(i), []).append(i)
+    return [groups[root] for root in sorted(groups)]
+
+
+def merge_duplicates(jobs):
     merged = []
-    for key in order:
-        duplicates = groups[key]
+    for indices in _duplicate_groups(jobs):
+        duplicates = [jobs[i] for i in indices]
         primary = dict(duplicates[0])
         for field in (
             "title",

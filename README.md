@@ -127,14 +127,34 @@ are plain textareas.
 3. Run `python3 scrape_jobs.py` and check the new source shows up with
    a sane job count.
 
-## Deduplication
+## Clean-up and deduplication
 
-Two listings are treated as the same job if either:
+Before merging, `scrapers/normalize.py` evens out what the boards spell
+differently:
+
+- **Tags** that differ only in case or punctuation ("Full-time",
+  "Full-Time", "Full Time") become one spelling, in sentence case.
+- **Organization names** lose a trailing acronym in brackets ("Centre for
+  Effective Altruism (CEA)"), and names that differ only in case or
+  punctuation ("FAR AI", "FAR.AI") become one (`ORG_ALIASES` picks the
+  spelling where the automatic choice is wrong).
+
+The scrape log prints how many spellings it merged.
+
+Two listings are then treated as the same job if either:
 
 1. their application links match after stripping query strings/UTM
    params, scheme, and trailing slashes, or
-2. they have the same normalized organization name and job title.
+2. they come from **different** boards and have the same normalized
+   organization name and job title (each board often links its own copy:
+   an ATS page, the org's careers page, a tracking redirect). Two listings
+   with the same title on the same board stay separate, since the board
+   lists them as distinct jobs (e.g. two locations at two salaries).
 
-Duplicates are merged into one row: empty fields are filled in from
-whichever source has them, tags are unioned, and `source` becomes a
-`;`-joined list of every board the job was found on.
+Matches chain (A~B and B~C make one job). Duplicates are merged into one
+row: empty fields are filled in from whichever source has them, tags are
+unioned, `source` becomes a `;`-joined list of every board the job was
+found on, and the row keeps the first-seen listing's `id`, so likes and
+tracked applications stay attached.
+
+Tests: `python3 -m unittest` (in `tests/`).
