@@ -62,6 +62,9 @@ function logout() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
   isAdmin = false;
+  fitScores.clear();
+  fitSortOption.hidden = true;
+  if (sortEl.value === "fit_desc") sortEl.value = "posted_desc";
   cachedJwt = null;
   jwtExpiresAt = 0;
   updateAuthUI();
@@ -301,6 +304,31 @@ function saveAppsToStorage() {
 }
 
 const applications = loadAppsFromStorage();
+
+// ── Fit scores ───────────────────────────────────────────────────────────────
+
+// jobId → {score, reason}, from fit_scores.py via GET /api/fit. Only for
+// accounts it scores; others never see the sort option or the badges.
+const fitScores = new Map();
+const fitSortOption = document.querySelector('#sort option[value="fit_desc"]');
+
+function fitBand(score) {
+  return score >= 70 ? "high" : score >= 40 ? "mid" : "low";
+}
+
+async function loadFit() {
+  if (!isLoggedIn()) return;
+  try {
+    const jwt = await getJwt();
+    const res = await fetch("/api/fit", { headers: { Authorization: `Bearer ${jwt}` } });
+    if (!res.ok) return;
+    const { scores } = await res.json();
+    fitScores.clear();
+    for (const [id, entry] of Object.entries(scores || {})) fitScores.set(id, entry);
+    fitSortOption.hidden = fitScores.size === 0;
+    render();
+  } catch {}
+}
 
 // ── Rich-text notes and letters ──────────────────────────────────────────────
 //
@@ -736,6 +764,12 @@ function sortJobs(list, mode) {
     case "org":
       sorted.sort((a, b) => (a.organization_name || "").localeCompare(b.organization_name || ""));
       break;
+    case "fit_desc":
+      // Unscored jobs (added by link, or not scored yet) last, newest first.
+      sorted.sort((a, b) =>
+        (fitScores.get(b.id)?.score ?? -1) - (fitScores.get(a.id)?.score ?? -1) ||
+        (b.publication_date || "").localeCompare(a.publication_date || ""));
+      break;
     case "posted_desc":
     default:
       sorted.sort((a, b) => (b.publication_date || "").localeCompare(a.publication_date || ""));
@@ -908,6 +942,18 @@ function jobCard(job) {
     org.textContent = job.organization_name || "Unknown organization";
   }
   titleWrap.appendChild(org);
+
+  const fit = fitScores.get(job.id);
+  if (fit) {
+    const fitEl = document.createElement("p");
+    fitEl.className = "job-fit";
+    const badge = document.createElement("span");
+    badge.className = `fit-score fit-${fitBand(fit.score)}`;
+    badge.textContent = fit.score;
+    badge.title = "How well this job fits your CV (0–100)";
+    fitEl.append(badge, ` ${fit.reason}`);
+    titleWrap.appendChild(fitEl);
+  }
 
   const meta = document.createElement("div");
   meta.className = "job-meta";
@@ -1799,6 +1845,7 @@ async function init() {
   render();
   loadPreferences();
   loadApplications();
+  loadFit();
   loadCustomJobs();
   loadAdmin();
 }

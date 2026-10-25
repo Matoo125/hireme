@@ -1,1 +1,2 @@
 requests>=2.31,<3
+anthropic>=2.3,<3

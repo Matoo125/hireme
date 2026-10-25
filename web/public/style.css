@@ -249,6 +249,34 @@ main {
   color: inherit;
 }
 
+.job-fit {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.fit-score {
+  display: inline-block;
+  min-width: 2.1em;
+  padding: 0 0.35em;
+  border-radius: 0.6em;
+  text-align: center;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--fit-fg);
+  background: var(--fit-bg);
+}
+
+.fit-high { --fit-fg: #1d6b34; --fit-bg: #dff3e4; }
+.fit-mid { --fit-fg: #7a5a00; --fit-bg: #fbf0cf; }
+.fit-low { --fit-fg: #6b6b6b; --fit-bg: #eeeeee; }
+
+@media (prefers-color-scheme: dark) {
+  .fit-high { --fit-fg: #8fd6a2; --fit-bg: #1f3a27; }
+  .fit-mid { --fit-fg: #e8c86a; --fit-bg: #3a3220; }
+  .fit-low { --fit-fg: #9a9a9a; --fit-bg: #2b2c31; }
+}
+
 .job-meta {
   font-size: 0.78rem;
   color: var(--muted);

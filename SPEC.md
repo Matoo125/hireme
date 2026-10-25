@@ -58,7 +58,7 @@ Logged-in users (auth via `api.altfresh.sk`, a bearer JWT verified against its J
 server-persisted per-user data under `data/`, one JSON file per user id, created on first
 write: `cv/<id>.json`+`.pdf` (uploaded CV), `preferences/<id>.json` (liked/hidden, synced up from
 `localStorage`), `applications/<id>.json` (tracked jobs: status, notes, motivation letter), and
-`custom-jobs/<id>.json` (jobs added by link — see below). None of this is checked into git or
+`custom-jobs/<id>.json` (jobs added by link — see below), and `fit/<id>.json` (fit scores, below). None of this is checked into git or
 touched by the scrape; it's entirely separate from `jobs.csv`.
 
 **Custom (user-added) jobs**: a logged-in user can paste a job link and the server fetches it
@@ -70,6 +70,13 @@ falling back to the link's hostname if the fetch fails or the title can't be fou
 frontend merges these into the in-memory `jobs` array client-side — they sort/filter/like/track
 like any scraped job, plus a "Remove" action (`DELETE /api/custom-jobs/:id`) scraped jobs don't
 have.
+
+**Fit scores**: `fit_scores.py` scores each job in `jobs.csv` against the CV of every user in
+`FIT_USER_IDS` (0-100 + one-sentence reason, `claude-haiku-5-5` at low effort, structured output,
+the CV PDF sent first with a cache breakpoint) into `data/fit/<id>.json`, keyed by CV hash and
+model so a new CV rescores everything. Run by `scrape_and_sync.sh` after each scrape (jobs lock
+released first); failures leave jobs unscored for the next run and make the run exit non-zero.
+The frontend shows score + reason on cards and a "Best fit for you" sort for scored users only.
 
 ## 4. Scraping
 
@@ -105,6 +112,7 @@ copy from: Algolia-backed (`eighty_thousand_hours.py`), SSR-embedded JSON
 | GET/POST/DELETE | `/api/cv`, `/api/cv/file` | CV upload/download/delete (PDF, 10 MB max). Auth required. |
 | GET/PUT | `/api/preferences` | Liked/hidden id sets. Auth required. |
 | GET, PUT/DELETE `/:jobId` | `/api/applications` | Tracked-application status/notes/letter per job. Auth required. |
+| GET | `/api/fit` | 200 `{model, scores: {jobId: {score, reason, scored_at}}}` for this user, 404 if they aren't scored. Auth required. |
 | GET | `/api/custom-jobs` | 200, this user's custom jobs as a JSON array. Auth required. |
 | POST | `/api/custom-jobs` | Body `{link, title?, organization_name?}` → fetches the link for a title if omitted, 201 with the created `CustomJob` (or 200 with the existing one if the normalized link was already added); 400 on an invalid/non-http(s) URL. Auth required. |
 | DELETE | `/api/custom-jobs/:id` | Removes one custom job. Auth required. |
@@ -149,12 +157,13 @@ tag or source board, and the like/not-relevant triage state described in §3.
 - Server-side `jobs.csv` vs. git `jobs.csv` can drift silently (§6) — mitigated 2026-09-08 by
   auto-committing/pushing after each scrape; any residual drift is confined to scrape/push
   failures that surface in `systemctl --failed`.
-- No relevance filtering/scoring beyond the four hardcoded boards — the "is this job relevant to
-  me" triage described in the original notes is entirely manual (browser like/hide), not automated.
+- Relevance triage is only partly automated: fit scores (§3) rank jobs against a CV for the users
+  in `FIT_USER_IDS`; hiding is still manual, and whether the scores catch what a user would hide
+  is measured with `fit_scores.py --evaluate`, not yet acted on.
 
 ## 8. Non-goals (current scope)
 
-- Automated relevance triage / description reading (see §1 divergence note).
+- Hiding jobs automatically: fit scores rank and explain, the user still decides.
 - Any board beyond the four listed in §1 — Profesia specifically is mentioned in
   the original notes but not implemented.
 - Real-time/on-demand scraping (only the daily timer).

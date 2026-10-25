@@ -12,10 +12,25 @@
 # .env), each run also reports to Healthchecks.io: a /start ping, then the
 # exit status with the run's log, so a failed, hung or missing run alerts
 # by email/push instead of waiting for someone to check systemctl.
+#
+# With FIT_USER_IDS set the same way (and ANTHROPIC_API_KEY), new jobs are
+# then scored against those users' CVs (fit_scores.py), after the jobs lock
+# is released so grid edits aren't held up by it.
 set -uo pipefail
 cd "$(dirname "$0")"
 
-HEALTHCHECK_URL=${HEALTHCHECK_URL:-$(sed -n 's/^HEALTHCHECK_URL=//p' .env 2>/dev/null | tail -n 1)}
+# NAME's value from a NAME=value line in .env (quotes around it dropped).
+from_env_file() {
+    sed -n "s/^$1=//p" .env 2>/dev/null | tail -n 1 | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/"
+}
+
+HEALTHCHECK_URL=${HEALTHCHECK_URL:-$(from_env_file HEALTHCHECK_URL)}
+FIT_USER_IDS=${FIT_USER_IDS:-$(from_env_file FIT_USER_IDS)}
+export FIT_USER_IDS
+# Exported only when set: an empty ANTHROPIC_API_KEY would hide any other
+# credential the SDK could find.
+ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-$(from_env_file ANTHROPIC_API_KEY)}
+if [ -n "$ANTHROPIC_API_KEY" ]; then export ANTHROPIC_API_KEY; else unset ANTHROPIC_API_KEY; fi
 
 # Ping Healthchecks.io at $1 (a suffix of the check's URL); extra arguments go
 # to curl. Never fails the run: a ping that can't get through is only logged.
@@ -54,6 +69,14 @@ scrape_and_sync() {
         fi
         git push --quiet origin main || { echo "!!! git push of jobs.csv FAILED" >&2; return 1; }
         echo "committed and pushed jobs.csv"
+    fi
+
+    if [ -n "$FIT_USER_IDS" ]; then
+        exec 9>&-  # release the jobs lock: scoring only reads jobs.csv
+        if ! PYTHONUNBUFFERED=1 python3 fit_scores.py; then
+            echo "!!! fit scoring had failures (unscored jobs are retried next run)" >&2
+            [ "$scrape_status" -eq 0 ] && scrape_status=1
+        fi
     fi
 
     return "$scrape_status"
