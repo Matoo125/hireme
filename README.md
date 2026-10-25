@@ -27,7 +27,7 @@ web/
 
 ## Running the scraper
 
-Requires Python 3.11+ and `pip install -r requirements.txt` (just `requests`).
+Requires Python 3.11+ and `pip install -r requirements.txt` (`requests`, and `anthropic` for fit scores).
 
 ```bash
 python3 scrape_jobs.py                  # writes jobs.csv
@@ -249,6 +249,34 @@ already listed get the date they first appeared, not the day this shipped;
 jobs listed before 2026-07-31 show that date. To rebuild it by hand:
 `python3 -m scrapers.history backfill`. Like the rest of `data/`, history
 lives only on the server, at roughly 100 kB a day.
+
+## Fit scores
+
+`fit_scores.py` scores how well each job fits a user's CV with Claude
+(`claude-haiku-5-5`, low effort): 0-100 plus one sentence, kept in
+`data/fit/<userId>.json`. Signed-in users with scores get the score and reason
+on each card and a "Best fit for you" sort (`GET /api/fit`); everyone else sees
+no change.
+
+- Who gets scored: the user ids in `FIT_USER_IDS` (comma-separated) who have
+  uploaded a CV. Your id is the `sub` of your altfresh login.
+- `scrape_and_sync.sh` runs it after each scrape when `FIT_USER_IDS` is set,
+  with `ANTHROPIC_API_KEY`; both can go in the repo's `.env` on the server:
+
+  ```
+  FIT_USER_IDS=7
+  ANTHROPIC_API_KEY=sk-ant-...
+  ```
+
+- Only jobs without a score are scored (the new ones each day); uploading a new
+  CV rescores everything, and scores of jobs no longer listed are dropped. The
+  CV goes first in each request, cached, so it's paid in full once per run.
+  Scoring all ~535 jobs costs a few cents; a normal day well under one.
+- A job the model declines or that fails is left unscored and tried again on
+  the next run; the run exits non-zero, so it shows in the healthcheck.
+- `python3 fit_scores.py --dry-run` says what would be scored without calling
+  anything; `--evaluate` compares the scores with your liked and hidden jobs
+  (the roadmap's bar: at least half of what you'd hide scored below 40).
 
 ## Hand corrections
 

@@ -11,6 +11,7 @@
 //   wait(ms)
 //   signIn("admin" | "user")  log in as that account (and load the admin flag)
 //   TOKENS                    { admin, user } JWTs, for direct API calls
+//   FIT_SCORES                the plain user's fit scores the server serves
 //   cx(name)                  the grid's column index for a column name
 //   rowOf(id)                 the grid's row index for a job id (-1 if not shown)
 //   openFilter(name)          open a column's filter; returns its jSuites dropdown
@@ -59,6 +60,15 @@ const files = {
 };
 await copyFile(path.join(HERE, "fixture", "scraped.json"), files.scraped);
 
+// Fit scores for the plain user (id 7) on the first three fixture jobs, as
+// fit_scores.py would write them; fit.js reads FIT_SCORES to check them.
+const fitDir = path.join(dir, "fit");
+const fixtureIds = (await Bun.file(files.scraped).json()).slice(0, 3).map((j: { id: string }) => j.id);
+const FIT_SCORES = Object.fromEntries(fixtureIds.map((id: string, i: number) => [
+  id, { score: [91, 55, 12][i], reason: `Reason ${i}`, scored_at: "2026-10-25" },
+]));
+await Bun.write(path.join(fitDir, "7.json"), JSON.stringify({ cv: "x", model: "test", scores: FIT_SCORES }));
+
 async function resetData() {
   await Bun.write(files.overrides, "# Browser tests.\n");
   const proc = Bun.spawn(
@@ -99,6 +109,7 @@ const server = Bun.spawn(["bun", "run", "server.ts"], {
     ADMIN_USER_IDS: "2",
     OVERRIDES_COMMIT: "0",
     AUTH_ISSUER: issuer,
+    FIT_DIR: fitDir,
   },
   stdout: "ignore",
   stderr: "inherit",
@@ -171,6 +182,7 @@ try {
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     const check = (name, ok, detail = "") => out.push([Boolean(ok), name, String(detail ?? "")]);
     const TOKENS = ${JSON.stringify(TOKENS)};
+    const FIT_SCORES = ${JSON.stringify(FIT_SCORES)};
     const cx = (name) => grid.options.columns.findIndex((c) => c.name === name);
     const rowOf = (id) => {
       for (let y = 0; y < grid.options.data.length; y++) if (grid.getValueFromCoords(0, y) === id) return y;

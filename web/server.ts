@@ -16,6 +16,8 @@ const CV_DIR = path.join(ROOT, "..", "data", "cv");
 const PREFS_DIR = path.join(ROOT, "..", "data", "preferences");
 const APPS_DIR = path.join(ROOT, "..", "data", "applications");
 const CUSTOM_JOBS_DIR = path.join(ROOT, "..", "data", "custom-jobs");
+// Written by fit_scores.py after each scrape; read-only here.
+const FIT_DIR = process.env.FIT_DIR ?? path.join(ROOT, "..", "data", "fit");
 
 const MAX_CV_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -677,6 +679,22 @@ Bun.serve({
       }
 
       return new Response("Method not allowed", { status: 405 });
+    }
+
+    // ── Fit scores ─────────────────────────────────────────────────────────
+    // GET /api/fit → {model, scores: {jobId: {score, reason, scored_at}}}
+    if (url.pathname === "/api/fit") {
+      let user;
+      try {
+        user = await verifyToken(req.headers.get("authorization"));
+      } catch {
+        return Response.json({ error: "unauthorized" }, { status: 401 });
+      }
+      if (req.method !== "GET") return new Response("Method not allowed", { status: 405 });
+      const file = Bun.file(path.join(FIT_DIR, `${user.id}.json`));
+      if (!(await file.exists())) return Response.json({ error: "No fit scores" }, { status: 404 });
+      const { model, scores } = await file.json();
+      return Response.json({ model, scores });
     }
 
     // ── Editor bundle ──────────────────────────────────────────────────────
