@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    # The daily scrape commits only jobs.csv; no code changed, nothing to test.
+    paths-ignore: ["jobs.csv", "**.md"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Python tests
+        run: python -m unittest
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      # @research/editor is a private repo fetched over SSH. Nothing tested
+      # here needs it: without it the server serves plain textareas.
+      - name: Install web dependencies (without the editor)
+        working-directory: web
+        run: |
+          jq 'del(.dependencies."@research/editor")' package.json > package.ci.json
+          mv package.ci.json package.json
+          bun install
+
+      - name: API tests
+        working-directory: web
+        run: bun test
+
+      - name: Browser tests
+        working-directory: web
+        env:
+          CHROMIUM: google-chrome
+        run: bun run test:browser

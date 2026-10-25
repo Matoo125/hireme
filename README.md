@@ -27,7 +27,7 @@ web/
 
 ## Running the scraper
 
-Requires Python 3 with `requests` installed.
+Requires Python 3.11+ and `pip install -r requirements.txt` (just `requests`).
 
 ```bash
 python3 scrape_jobs.py                  # writes jobs.csv
@@ -266,3 +266,9 @@ salary_range = "$79,200 - $90,000 per year"
   altfresh's sign-in with an admin and a plain user, and the browser;
   each `tests/browser/*.js` is one test run in the page, with the helpers
   listed at the top of `run.ts`. Nothing outside a temp dir is touched.
+
+GitHub Actions (`.github/workflows/ci.yml`) runs all three on every push
+to `main` and every pull request, except pushes that only change `jobs.csv`
+or Markdown (the daily scrape commit). It installs the web dependencies
+without `@research/editor`, a private repo, so the browser tests run
+against the plain-textarea fallback.
