@@ -84,7 +84,9 @@ results, then `dedupe.merge_duplicates()`:
   as a signal something broke, e.g. a site redesign). Since this runs unattended via
   `hireme-scrape.timer`, a non-zero exit is what makes a degraded run visible —
   `systemctl status hireme-scrape.service` / `systemctl --failed` will show it as failed instead
-  of a silently "successful" run that quietly lost a board.
+  of a silently "successful" run that quietly lost a board. With `HEALTHCHECK_URL` set,
+  `scrape_and_sync.sh` also pings Healthchecks.io (start, then exit status + log), which alerts on
+  a failed, hung or missing run (§6).
 
 Adding a board = new `scrapers/<name>.py` with `fetch_jobs()` returning `FIELDNAMES`-shaped
 dicts, registered in `SCRAPERS` in `scrape_jobs.py`. Three existing implementation patterns to
@@ -130,6 +132,10 @@ tag or source board, and the like/not-relevant triage state described in §3.
   commit is rebased on top of `origin/main` (via `git pull --rebase --autostash`) before
   pushing; if that hits a conflict the script aborts the rebase and exits non-zero so it
   shows up in `systemctl --failed`.
+- **Failure alerts**: with `HEALTHCHECK_URL` in the environment or the repo's `.env`,
+  `scrape_and_sync.sh` pings Healthchecks.io at `/start` and at `/<exit status>` with the last
+  100 kB of the log; the check (cron `0 6 * * *`, 1 h grace) emails on a failed, hung or missing
+  run. Ping failures are logged and never fail the run. Unset = no pings.
 - CI: GitHub Actions (`.github/workflows/ci.yml`) runs the Python unit tests, the API tests and
   the browser tests on pushes to `main` and on PRs, skipping pushes that only touch `jobs.csv` or
   Markdown. Python dependencies are in `requirements.txt` (only `requests`).

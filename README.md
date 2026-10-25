@@ -51,6 +51,25 @@ app works out of the box after a fresh clone. On this server
 `scrape_and_sync.sh` now commits and pushes the refreshed `jobs.csv`
 automatically after each daily scrape - no manual step needed.
 
+### Failure alerts
+
+`scrape_and_sync.sh` reports each run to [Healthchecks.io](https://healthchecks.io)
+when `HEALTHCHECK_URL` is set: a `/start` ping when it begins, then the exit
+status with the last 100 kB of the run's log. You get an email (or push, Slack,
+...) when a board raised or returned 0 jobs, `overrides.toml` is broken, the
+git pull/push failed, or the run hung or never happened. Setup:
+
+1. Create a free check at healthchecks.io with schedule type Cron, `0 6 * * *`,
+   the server's timezone, and a grace time of 1 hour (the timer adds up to 10
+   minutes of random delay, plus the scrape itself).
+2. Put its ping URL in the repo's `.env` on the server (gitignored):
+   `HEALTHCHECK_URL=https://hc-ping.com/<uuid>`. An environment variable
+   of the same name, e.g. `Environment=` in `hireme-scrape.service`, wins.
+3. Run `./scrape_and_sync.sh` once by hand and check the ping shows up.
+
+Without `HEALTHCHECK_URL` the script behaves as before. A ping that can't get
+through is logged and never fails the run.
+
 ## Running the web app
 
 Requires [Bun](https://bun.sh).
