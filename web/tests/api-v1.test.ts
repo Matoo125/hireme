@@ -120,6 +120,18 @@ describe("queryJobs", () => {
     expect(res.data.every((j: any) => j.published >= "2026-01-01")).toBe(true);
   });
 
+  test("new_since filters on first_seen", () => {
+    const seen = [
+      { id: "a", first_seen: "2026-10-20" },
+      { id: "b", first_seen: "2026-10-25" },
+      { id: "c", first_seen: "" },
+    ];
+    const res = queryJobs(seen, new URLSearchParams("new_since=2026-10-21"));
+    expect(res.data.map((j: any) => j.id)).toEqual(["b"]);
+    expect((res.data[0] as any).first_seen).toBe("2026-10-25");
+    expect(() => queryJobs(seen, new URLSearchParams("new_since=last week"))).toThrow("new_since");
+  });
+
   test("sort=closing puts dated jobs first, soonest first", () => {
     const closes = query("sort=closing&limit=200").data.map((j: any) => j.closes);
     const dated = closes.filter(Boolean);

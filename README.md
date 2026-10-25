@@ -149,7 +149,7 @@ curl 'localhost:4020/api/v1/jobs?location=Remote&sort=closing&limit=5'
 
 - `GET /api/v1/jobs` (filters: `q`, `source`, the typed tag columns,
   `organization`, `currency`, `period`, `salary_min`, `posted_since`,
-  `closes_after`; `sort`, `fields=full`, `limit`/`offset`),
+  `new_since`, `closes_after`; `sort`, `fields=full`, `limit`/`offset`),
   `GET /api/v1/jobs/:id`, `GET /api/v1/facets`, `GET /api/v1/meta`.
 - Values are typed: lists are arrays (not `;`-joined), salary amounts are
   numbers, missing values are `null`. Descriptions only with `fields=full`
@@ -231,6 +231,24 @@ salary text (the originals stay in `tags` and `salary_range`):
   more in USD/GBP/EUR/CAD/AUD/CHF, else left empty. "Competitive" and
   the like leave all four empty. The scrape log prints how many salaries
   were read and how many weren't.
+
+## History and first-seen dates
+
+Each scrape saves a snapshot of the jobs it found (id, title, organization,
+dates, boards) as `data/history/<date>.json`, and the date each job id was
+first seen in `data/history/first-seen.json` (`scrapers/history.py`). An id
+is never forgotten, so a job that drops out for a day (its board failed) keeps
+its date when it comes back. The date goes into `jobs.csv` as `first_seen`
+(also kept in `data/scraped.json`, so rebuilds after corrections keep it) and
+into the API as `first_seen`, with `new_since=<date>` to ask for only the jobs
+that are new since then.
+
+The first scrape without `first-seen.json` builds it from the git history of
+`jobs.csv` (each commit's ids, back to 2026-07-31 when jobs got ids), so jobs
+already listed get the date they first appeared, not the day this shipped;
+jobs listed before 2026-07-31 show that date. To rebuild it by hand:
+`python3 -m scrapers.history backfill`. Like the rest of `data/`, history
+lives only on the server, at roughly 100 kB a day.
 
 ## Hand corrections
 

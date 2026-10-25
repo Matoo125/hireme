@@ -178,6 +178,15 @@
             }
           },
           {
+            "name": "new_since",
+            "in": "query",
+            "description": "Jobs hireme first saw on or after this date (first_seen), whatever date the board gives. Use the date of your last check to get only new jobs.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
             "name": "closes_after",
             "in": "query",
             "description": "Exclude jobs closing before this date. Jobs without a close date are kept.",
@@ -694,6 +703,14 @@
               "null"
             ],
             "format": "date"
+          },
+          "first_seen": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "When hireme's daily scrape first found this job. Jobs listed before 2026-07-31 show that date."
           },
           "salary": {
             "type": "object",

@@ -22,6 +22,7 @@ FIELDNAMES = [
     "link",
     "publication_date",
     "close_date",
+    "first_seen",
     "organization_name",
     "organization_url",
     "organization_description",

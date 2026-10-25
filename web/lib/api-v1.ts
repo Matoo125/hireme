@@ -13,7 +13,7 @@ const TAG_FIELDS = ["job_type", "experience", "education", "location", "cause_ar
 
 const LIST_PARAMS = new Set([
   "q", "source", "organization", "currency", "period", ...TAG_FIELDS,
-  "salary_min", "posted_since", "closes_after", "sort", "fields", "limit", "offset",
+  "salary_min", "posted_since", "new_since", "closes_after", "sort", "fields", "limit", "offset",
 ]);
 const SORTS = ["newest", "oldest", "closing", "organization"] as const;
 const DEFAULT_LIMIT = 50;
@@ -56,6 +56,7 @@ export function toJob(row: Row, full: boolean) {
     },
     published: text(row.publication_date),
     closes: text(row.close_date),
+    first_seen: text(row.first_seen),
     salary: {
       text: text(row.salary_range),
       min: num(row.salary_min),
@@ -97,6 +98,7 @@ export function queryJobs(rows: Row[], params: URLSearchParams) {
 
   const q = params.get("q")?.trim().toLowerCase() || null;
   const postedSince = dateParam(params, "posted_since");
+  const newSince = dateParam(params, "new_since");
   const closesAfter = dateParam(params, "closes_after");
   const salaryMinParam = params.get("salary_min");
   if (salaryMinParam !== null && !Number.isFinite(Number(salaryMinParam))) {
@@ -141,6 +143,7 @@ export function queryJobs(rows: Row[], params: URLSearchParams) {
       if (top === null || top < salaryMin) return false;
     }
     if (postedSince && !(row.publication_date && row.publication_date >= postedSince)) return false;
+    if (newSince && !(row.first_seen && row.first_seen >= newSince)) return false;
     if (closesAfter && row.close_date && row.close_date < closesAfter) return false;
     return true;
   });

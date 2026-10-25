@@ -33,7 +33,7 @@ No database. `jobs.csv` is the entire persistence layer — a flat file, checked
 a point-in-time snapshot, overwritten by each scrape run. Columns (`scrapers/common.py:FIELDNAMES`):
 
 ```
-id, source, title, link, publication_date, close_date,
+id, source, title, link, publication_date, close_date, first_seen,
 organization_name, organization_url, organization_description,
 description, salary_range, tags
 ```
@@ -42,6 +42,10 @@ description, salary_range, tags
   org+title if no link) — computed in `dedupe.py:stable_id`. Stable across re-scrapes as long as
   the job's link (or org+title) doesn't change; this is what lets the frontend's per-job
   like/hide state survive a re-scrape.
+- `first_seen`: the date hireme's scrape first found the id (`scrapers/history.py`), from
+  `data/history/first-seen.json`, which never drops an id; daily snapshots of each scrape are in
+  `data/history/<date>.json`. Bootstrapped from the git history of `jobs.csv`, so the earliest
+  value is 2026-07-31 (when ids were introduced). Exposed in `/api/v1` with a `new_since` filter.
 - `source`, `tags`: `;`-joined lists, since a job can be cross-posted and tagged from multiple
   boards.
 - Currently 538 rows / 4 boards (80,000 Hours, Probably Good, EA Opportunities Board, Animal
@@ -104,7 +108,7 @@ copy from: Algolia-backed (`eighty_thousand_hours.py`), SSR-embedded JSON
 | GET | `/api/custom-jobs` | 200, this user's custom jobs as a JSON array. Auth required. |
 | POST | `/api/custom-jobs` | Body `{link, title?, organization_name?}` → fetches the link for a title if omitted, 201 with the created `CustomJob` (or 200 with the existing one if the normalized link was already added); 400 on an invalid/non-http(s) URL. Auth required. |
 | DELETE | `/api/custom-jobs/:id` | Removes one custom job. Auth required. |
-| GET | `/api/v1/jobs` | Public. Filtered (`q`, `source`, typed tag columns, `organization`, `currency`, `period`, `salary_min`, `posted_since`, `closes_after`), sorted (`newest`/`oldest`/`closing`/`organization`), paged (`limit` ≤ 200, `offset`) jobs as typed JSON `{data, page, meta}`; descriptions only with `fields=full`; 400 `{error:{code,message}}` on an unknown or invalid param |
+| GET | `/api/v1/jobs` | Public. Filtered (`q`, `source`, typed tag columns, `organization`, `currency`, `period`, `salary_min`, `posted_since`, `new_since`, `closes_after`), sorted (`newest`/`oldest`/`closing`/`organization`), paged (`limit` ≤ 200, `offset`) jobs as typed JSON `{data, page, meta}`; descriptions only with `fields=full`; 400 `{error:{code,message}}` on an unknown or invalid param |
 | GET | `/api/v1/jobs/:id` | Public. One job with descriptions; 404 if unknown |
 | GET | `/api/v1/facets`, `/api/v1/meta` | Public. Values of each filterable field with counts; last scrape time (`data/scraped.json` mtime), totals, attribution |
 | GET | `/api/v1/openapi.json`, `/api` | Public. The v1 contract (`web/public/openapi.json`) and its docs page |

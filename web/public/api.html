@@ -45,6 +45,7 @@
       <tr><td><code>organization</code>, <code>currency</code>, <code>period</code></td><td>Exact organization name, salary currency, salary period</td></tr>
       <tr><td><code>salary_min</code></td><td>Salary (max, or min if no max) at least this; jobs without a parsed salary are left out</td></tr>
       <tr><td><code>posted_since</code>, <code>closes_after</code></td><td>Dates, <code>YYYY-MM-DD</code>; jobs without a close date pass <code>closes_after</code></td></tr>
+      <tr><td><code>new_since</code></td><td>Jobs hireme first saw on or after this date (<code>first_seen</code>); pass the date of your last check to get only new jobs</td></tr>
       <tr><td><code>sort</code></td><td><code>newest</code> (default), <code>oldest</code>, <code>closing</code>, <code>organization</code></td></tr>
       <tr><td><code>fields</code></td><td><code>summary</code> (default) or <code>full</code> for descriptions</td></tr>
       <tr><td><code>limit</code>, <code>offset</code></td><td>Paging; <code>limit</code> 1–200, default 50</td></tr>

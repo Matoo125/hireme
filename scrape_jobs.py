@@ -12,7 +12,9 @@ Each board is scraped by its own module in scrapers/, normalized to a
 common schema, cleaned up where boards spell the same tag or organization
 differently (scrapers/normalize.py), then merged and deduplicated
 (scrapers/dedupe.py) since the same role is often cross-posted to more
-than one board. The result is kept in data/scraped.json, then hand
+than one board. Each job gets the date it was first seen, from the daily
+snapshots in data/history/ (scrapers/history.py). The result is kept in
+data/scraped.json, then hand
 corrections from overrides.toml are applied (scrapers/overrides.py), the
 tags sorted into typed columns (scrapers/tag_fields.py) and the salary
 text read into numbers (scrapers/salary.py).
@@ -21,6 +23,8 @@ text read into numbers (scrapers/salary.py).
 import argparse
 import sys
 from collections import Counter
+from datetime import datetime, timezone
+from pathlib import Path
 
 from scrapers import (
     animal_advocacy_careers,
@@ -29,6 +33,7 @@ from scrapers import (
     probably_good,
 )
 from scrapers.dedupe import merge_duplicates
+from scrapers.history import record
 from scrapers.normalize import normalize_jobs
 from scrapers.overrides import OverridesError, finish, load_overrides, save_scraped, write_csv
 from scrapers.tag_fields import classify_tags
@@ -84,6 +89,17 @@ def main():
     print(f"Total before dedup: {len(all_jobs)}")
     merged = merge_duplicates(all_jobs)
     print(f"Total after dedup: {len(merged)}")
+
+    history = Path(args.scraped).parent / "history"
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    try:
+        new = record(merged, today, history, args.output)
+        print(f"New since earlier scrapes: {new} jobs (snapshot in {history}/{today}.json)")
+    except Exception as exc:
+        # Not worth losing the scrape over: jobs.csv is still written, with
+        # first_seen left empty.
+        print(f"  history not recorded: {exc}", file=sys.stderr)
+        problems.append(f"history: {exc!r}")
     save_scraped(args.scraped, merged)
 
     try:
