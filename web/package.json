@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "start": "bun run server.ts",
+    "test": "bun test",
     "test:browser": "bun tests/browser/run.ts"
   },
   "dependencies": {

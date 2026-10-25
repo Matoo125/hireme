@@ -1,0 +1,875 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "hireme jobs API",
+    "version": "1",
+    "description": "Read-only, public API over the deduplicated job list at hireme.sk, refreshed daily. No authentication. CORS open to any origin. 60 requests per minute per IP. Responses carry a weak ETag and Cache-Control: public, max-age=300. Within v1, fields are only added, never renamed or removed. Listings come from 80,000 Hours, Probably Good, the EA Opportunities Board and Animal Advocacy Careers; please link to each job's original posting (url)."
+  },
+  "servers": [
+    {
+      "url": "https://hireme.sk"
+    }
+  ],
+  "paths": {
+    "/api/v1/jobs": {
+      "get": {
+        "summary": "List jobs",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Case-insensitive substring match on title, organization name and description.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "policy"
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "description": "Job board. Repeat for OR.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true,
+            "example": [
+              "80,000 Hours"
+            ]
+          },
+          {
+            "name": "job_type",
+            "in": "query",
+            "description": "Typed tag column. Repeat for OR; different parameters AND together.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "experience",
+            "in": "query",
+            "description": "Typed tag column. Repeat for OR; different parameters AND together.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "education",
+            "in": "query",
+            "description": "Typed tag column. Repeat for OR; different parameters AND together.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "location",
+            "in": "query",
+            "description": "Typed tag column. Repeat for OR; different parameters AND together.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "cause_area",
+            "in": "query",
+            "description": "Typed tag column. Repeat for OR; different parameters AND together.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "skills",
+            "in": "query",
+            "description": "Typed tag column. Repeat for OR; different parameters AND together.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "organization",
+            "in": "query",
+            "description": "Exact organization name. Repeat for OR.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "currency",
+            "in": "query",
+            "description": "Parsed salary currency (ISO 4217). Repeat for OR.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true,
+            "example": [
+              "USD"
+            ]
+          },
+          {
+            "name": "period",
+            "in": "query",
+            "description": "Parsed salary period: hour, day, week, month, year, total, unpaid. Repeat for OR.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "salary_min",
+            "in": "query",
+            "description": "Keep jobs whose salary.max (or salary.min if no max) is at least this. Excludes jobs with no parsed salary.",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "posted_since",
+            "in": "query",
+            "description": "publication date on or after.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "closes_after",
+            "in": "query",
+            "description": "Exclude jobs closing before this date. Jobs without a close date are kept.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Order.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "newest",
+                "oldest",
+                "closing",
+                "organization"
+              ],
+              "default": "newest"
+            }
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "description": "summary omits description and organization.description; full includes them.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "summary",
+                "full"
+              ],
+              "default": "summary"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Jobs to skip.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Job"
+                      }
+                    },
+                    "page": {
+                      "type": "object",
+                      "properties": {
+                        "total": {
+                          "type": "integer"
+                        },
+                        "limit": {
+                          "type": "integer"
+                        },
+                        "offset": {
+                          "type": "integer"
+                        },
+                        "next": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Path of the next page, or null on the last page."
+                        }
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "304": {
+            "description": "Not modified (If-None-Match matched the ETag)"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{id}": {
+      "get": {
+        "summary": "One job, with descriptions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Job"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "304": {
+            "description": "Not modified (If-None-Match matched the ETag)"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/facets": {
+      "get": {
+        "summary": "Values of each filterable field, with job counts",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "source": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "string"
+                              },
+                              "count": {
+                                "type": "integer"
+                              }
+                            }
+                          }
+                        },
+                        "job_type": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "string"
+                              },
+                              "count": {
+                                "type": "integer"
+                              }
+                            }
+                          }
+                        },
+                        "experience": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "string"
+                              },
+                              "count": {
+                                "type": "integer"
+                              }
+                            }
+                          }
+                        },
+                        "education": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "string"
+                              },
+                              "count": {
+                                "type": "integer"
+                              }
+                            }
+                          }
+                        },
+                        "location": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "string"
+                              },
+                              "count": {
+                                "type": "integer"
+                              }
+                            }
+                          }
+                        },
+                        "cause_area": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "string"
+                              },
+                              "count": {
+                                "type": "integer"
+                              }
+                            }
+                          }
+                        },
+                        "skills": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "string"
+                              },
+                              "count": {
+                                "type": "integer"
+                              }
+                            }
+                          }
+                        },
+                        "organization": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "string"
+                              },
+                              "count": {
+                                "type": "integer"
+                              }
+                            }
+                          }
+                        },
+                        "currency": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "string"
+                              },
+                              "count": {
+                                "type": "integer"
+                              }
+                            }
+                          }
+                        },
+                        "period": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "string"
+                              },
+                              "count": {
+                                "type": "integer"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified (If-None-Match matched the ETag)"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/meta": {
+      "get": {
+        "summary": "Last scrape time, totals and attribution",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "scraped_at": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "version": {
+                          "type": "string"
+                        },
+                        "total_jobs": {
+                          "type": "integer"
+                        },
+                        "sources": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "string"
+                              },
+                              "count": {
+                                "type": "integer"
+                              }
+                            }
+                          }
+                        },
+                        "attribution": {
+                          "type": "string"
+                        },
+                        "docs": {
+                          "type": "string"
+                        },
+                        "openapi": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified (If-None-Match matched the ETag)"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Job": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "url",
+          "sources",
+          "organization",
+          "published",
+          "closes",
+          "salary",
+          "tags",
+          "links"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable 12-character id; survives re-scrapes and cross-board merges.",
+            "example": "7623624a6592"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The original posting. Please link here."
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Every board the job was found on."
+          },
+          "organization": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "description": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Only with fields=full and on /jobs/{id}."
+              }
+            }
+          },
+          "published": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "closes": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "salary": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The board's own wording."
+              },
+              "min": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "max": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "currency": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "period": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "job_type": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "experience": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "education": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "location": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cause_area": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "other_tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "corrected": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields set by hand correction rather than by the board."
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Only with fields=full and on /jobs/{id}."
+          },
+          "links": {
+            "type": "object",
+            "properties": {
+              "self": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "Meta": {
+        "type": "object",
+        "properties": {
+          "scraped_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "bad_param",
+                  "not_found",
+                  "method_not_allowed",
+                  "rate_limited",
+                  "unavailable"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Over the rate limit",
+        "headers": {
+          "Retry-After": {
+            "schema": {
+              "type": "integer"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  }
+}

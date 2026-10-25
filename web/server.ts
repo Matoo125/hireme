@@ -2,9 +2,11 @@
 // reading the jobs CSV produced by scrape_80000hours_jobs.py.
 
 import path from "path";
-import { mkdir, unlink } from "fs/promises";
+import { mkdir, stat, unlink } from "fs/promises";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { fetchPage, FetchError } from "./lib/fetch-page";
+import { parseRows } from "./lib/csv";
+import { handleV1 } from "./lib/api-v1";
 
 const PORT = Number(process.env.PORT ?? 4020);
 const ROOT = import.meta.dir;
@@ -78,61 +80,59 @@ function setOverrides(
   return result;
 }
 
-// ── CSV parsing ──────────────────────────────────────────────────────────────
+// ── Jobs data ────────────────────────────────────────────────────────────────
 
-function parseCSV(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = "";
-  let inQuotes = false;
+// jobs.csv parsed once and kept until its mtime or size changes (a scrape or a
+// hand correction rewrites it). `version` doubles as the /api/v1 ETag.
+let jobsCache: { version: string; rows: Record<string, string>[] } | null = null;
 
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (inQuotes) {
-      if (c === '"') {
-        if (text[i + 1] === '"') {
-          field += '"';
-          i++;
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        field += c;
-      }
-      continue;
-    }
-
-    if (c === '"') {
-      inQuotes = true;
-    } else if (c === ",") {
-      row.push(field);
-      field = "";
-    } else if (c === "\r") {
-      // ignore, \n handles the line break
-    } else if (c === "\n") {
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = "";
-    } else {
-      field += c;
-    }
+async function loadJobs(): Promise<{ version: string; rows: Record<string, string>[] }> {
+  const info = await stat(CSV_PATH);
+  const version = `${info.mtimeMs}-${info.size}`;
+  if (jobsCache?.version !== version) {
+    jobsCache = { version, rows: parseRows(await Bun.file(CSV_PATH).text()) };
   }
-  if (field.length > 0 || row.length > 0) {
-    row.push(field);
-    rows.push(row);
-  }
-  return rows.filter((r) => !(r.length === 1 && r[0] === ""));
+  return jobsCache;
 }
 
-async function loadJobs(): Promise<Record<string, string>[]> {
-  const text = await Bun.file(CSV_PATH).text();
-  const rows = parseCSV(text);
-  const [header, ...body] = rows;
-  return body.map((row) =>
-    Object.fromEntries(header.map((key, i) => [key, row[i] ?? ""]))
-  );
+/** When the last scrape finished: scrape_jobs.py writes data/scraped.json on
+ *  every run, and nothing else does (rebuilds after corrections only read it). */
+async function scrapedAt(): Promise<string | null> {
+  try {
+    return (await stat(SCRAPED_PATH)).mtime.toISOString();
+  } catch {
+    return null;
+  }
 }
+
+// ── Public API rate limit ────────────────────────────────────────────────────
+
+// Fixed one-minute window per client IP. The server only listens on localhost
+// behind Caddy, so X-Forwarded-For is Caddy's and can be trusted.
+const API_RATE_LIMIT = Number(process.env.API_RATE_LIMIT ?? 60);
+const apiHits = new Map<string, { windowStart: number; count: number }>();
+
+/** Seconds to wait if this request is over the limit, else null. */
+function rateLimited(ip: string): number | null {
+  const now = Date.now();
+  let hit = apiHits.get(ip);
+  if (!hit || now - hit.windowStart >= 60_000) {
+    if (apiHits.size > 10_000) {
+      for (const [key, h] of apiHits) if (now - h.windowStart >= 60_000) apiHits.delete(key);
+    }
+    hit = { windowStart: now, count: 0 };
+    apiHits.set(ip, hit);
+  }
+  hit.count++;
+  return hit.count > API_RATE_LIMIT ? Math.ceil((hit.windowStart + 60_000 - now) / 1000) : null;
+}
+
+const API_CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "If-None-Match",
+  "Access-Control-Expose-Headers": "ETag, Retry-After",
+};
 
 // ── CV helpers ───────────────────────────────────────────────────────────────
 
@@ -315,20 +315,64 @@ function serveAsset(req: Request, asset: Asset): Response {
 Bun.serve({
   port: PORT,
   hostname: process.env.HOST ?? "127.0.0.1",
-  async fetch(req) {
+  async fetch(req, server) {
     const url = new URL(req.url);
 
     // ── Jobs API ───────────────────────────────────────────────────────────
     if (url.pathname === "/api/jobs") {
       try {
-        const jobs = await loadJobs();
-        return Response.json(jobs);
+        const { rows } = await loadJobs();
+        return Response.json(rows);
       } catch (err) {
         return Response.json(
           { error: `Could not read ${CSV_PATH}: ${err}` },
           { status: 500 }
         );
       }
+    }
+
+    // ── Public API v1 (read-only, any origin) ──────────────────────────────
+    if (url.pathname === "/api" || url.pathname === "/api/") {
+      return new Response(Bun.file(path.join(PUBLIC_DIR, "api.html")));
+    }
+    if (url.pathname.startsWith("/api/v1/")) {
+      if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: API_CORS });
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        return Response.json(
+          { error: { code: "method_not_allowed", message: "The public API is read-only" } },
+          { status: 405, headers: { ...API_CORS, Allow: "GET, OPTIONS" } }
+        );
+      }
+      const ip =
+        req.headers.get("x-forwarded-for")?.split(",")[0].trim() || server.requestIP(req)?.address || "unknown";
+      const wait = rateLimited(ip);
+      if (wait !== null) {
+        return Response.json(
+          { error: { code: "rate_limited", message: `Over ${API_RATE_LIMIT} requests a minute; retry in ${wait}s` } },
+          { status: 429, headers: { ...API_CORS, "Retry-After": String(wait) } }
+        );
+      }
+      if (url.pathname === "/api/v1/openapi.json") {
+        return new Response(Bun.file(path.join(PUBLIC_DIR, "openapi.json")), {
+          headers: { ...API_CORS, "Content-Type": "application/json" },
+        });
+      }
+      let jobs;
+      try {
+        jobs = await loadJobs();
+      } catch (err) {
+        console.error(`Could not read ${CSV_PATH}: ${err}`);
+        return Response.json(
+          { error: { code: "unavailable", message: "Job data could not be read" } },
+          { status: 500, headers: API_CORS }
+        );
+      }
+      const etag = `W/"${jobs.version}"`;
+      const headers = { ...API_CORS, ETag: etag, "Cache-Control": "public, max-age=300" };
+      if (req.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers });
+      const res = handleV1(url, { rows: jobs.rows, scrapedAt: await scrapedAt() });
+      for (const [key, value] of Object.entries(res.ok ? headers : API_CORS)) res.headers.set(key, value);
+      return res;
     }
 
     // ── Admin: hand corrections ────────────────────────────────────────────

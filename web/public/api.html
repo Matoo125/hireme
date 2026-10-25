@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>hireme API</title>
+  <link rel="stylesheet" href="/style.css" />
+  <style>
+    .api-doc { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; line-height: 1.5; }
+    .api-doc h1 { margin-bottom: 4px; }
+    .api-doc .lead { color: var(--muted); margin-top: 0; }
+    .api-doc code, .api-doc pre { background: var(--chip-bg); border-radius: 4px; }
+    .api-doc code { padding: 1px 4px; }
+    .api-doc pre { padding: 12px; overflow-x: auto; }
+    .api-doc pre code { padding: 0; background: none; }
+    .api-doc table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+    .api-doc th, .api-doc td { border-bottom: 1px solid var(--border); padding: 6px 8px; text-align: left; vertical-align: top; }
+    .api-doc a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <main class="api-doc">
+    <h1>hireme API</h1>
+    <p class="lead">Read-only, public JSON over the same deduplicated job list as <a href="/">hireme.sk</a>, refreshed daily.</p>
+
+    <p>No key needed. Any origin may call it (CORS). Limit: 60 requests per minute per IP.
+      Responses carry an <code>ETag</code>; send it back as <code>If-None-Match</code> to get a 304 when nothing changed.
+      The full contract is <a href="/api/v1/openapi.json">openapi.json</a>; within v1, fields are only added.</p>
+
+    <h2>Endpoints</h2>
+    <table>
+      <tr><th>Endpoint</th><th>Returns</th></tr>
+      <tr><td><code>GET /api/v1/jobs</code></td><td>Filtered, sorted, paged jobs</td></tr>
+      <tr><td><code>GET /api/v1/jobs/{id}</code></td><td>One job, with descriptions</td></tr>
+      <tr><td><code>GET /api/v1/facets</code></td><td>Each filterable field's values with job counts</td></tr>
+      <tr><td><code>GET /api/v1/meta</code></td><td>Last scrape time, totals per board</td></tr>
+    </table>
+
+    <h2>Filtering <code>/api/v1/jobs</code></h2>
+    <table>
+      <tr><th>Parameter</th><th>Meaning</th></tr>
+      <tr><td><code>q</code></td><td>Text in the title, organization or description</td></tr>
+      <tr><td><code>source</code></td><td>Job board</td></tr>
+      <tr><td><code>job_type</code>, <code>experience</code>, <code>education</code>, <code>location</code>, <code>cause_area</code>, <code>skills</code></td><td>Typed tags; see <code>/api/v1/facets</code> for values</td></tr>
+      <tr><td><code>organization</code>, <code>currency</code>, <code>period</code></td><td>Exact organization name, salary currency, salary period</td></tr>
+      <tr><td><code>salary_min</code></td><td>Salary (max, or min if no max) at least this; jobs without a parsed salary are left out</td></tr>
+      <tr><td><code>posted_since</code>, <code>closes_after</code></td><td>Dates, <code>YYYY-MM-DD</code>; jobs without a close date pass <code>closes_after</code></td></tr>
+      <tr><td><code>sort</code></td><td><code>newest</code> (default), <code>oldest</code>, <code>closing</code>, <code>organization</code></td></tr>
+      <tr><td><code>fields</code></td><td><code>summary</code> (default) or <code>full</code> for descriptions</td></tr>
+      <tr><td><code>limit</code>, <code>offset</code></td><td>Paging; <code>limit</code> 1–200, default 50</td></tr>
+    </table>
+    <p>Repeat a parameter to match any of its values; different parameters must all match. Unknown parameters are a 400, so a typo never silently returns everything.</p>
+
+    <pre><code>curl 'https://hireme.sk/api/v1/jobs?location=Remote&amp;cause_area=AI+safety+%26+policy&amp;sort=closing&amp;limit=20'</code></pre>
+
+    <h2>Attribution</h2>
+    <p>Listings come from <a href="https://jobs.80000hours.org">80,000 Hours</a>, <a href="https://jobs.probablygood.org">Probably Good</a>,
+      the <a href="https://www.effectivealtruism.org/opportunities">EA Opportunities Board</a> and
+      <a href="https://animaladvocacycareers.org/job-board/">Animal Advocacy Careers</a>. Please link to each job's original posting (<code>url</code>).</p>
+  </main>
+</body>
+</html>

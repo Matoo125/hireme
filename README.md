@@ -20,7 +20,8 @@ scrapers/          one module per job board, each exposing fetch_jobs()
 scrape_jobs.py     orchestrates all scrapers, dedupes, writes jobs.csv
 jobs.csv           output of the last scrape run (committed as a snapshot)
 web/
-  server.ts        Bun server: serves web/public/ and GET /api/jobs (reads jobs.csv)
+  server.ts        Bun server: serves web/public/, GET /api/jobs and the public /api/v1 (reads jobs.csv)
+  lib/api-v1.ts    the public API: typed jobs, filters, paging, facets
   public/          plain HTML/CSS/JS frontend, no build step (but see the editor below)
 ```
 
@@ -115,6 +116,35 @@ are plain textareas.
   isn't wiped by the next scrape. Merged into the job list client-side
   with `source: "custom"`, so it likes/tracks/filters like any other
   listing, plus a "Remove" action scraped jobs don't have.
+
+## Public API
+
+`/api/v1` is a read-only, public JSON API over the same jobs, for scripts,
+bots and other sites. It's documented for consumers at
+[hireme.sk/api](https://hireme.sk/api) (`web/public/api.html`), and the
+contract is `web/public/openapi.json`, served at `/api/v1/openapi.json`.
+
+```bash
+curl 'localhost:4020/api/v1/jobs?location=Remote&sort=closing&limit=5'
+```
+
+- `GET /api/v1/jobs` (filters: `q`, `source`, the typed tag columns,
+  `organization`, `currency`, `period`, `salary_min`, `posted_since`,
+  `closes_after`; `sort`, `fields=full`, `limit`/`offset`),
+  `GET /api/v1/jobs/:id`, `GET /api/v1/facets`, `GET /api/v1/meta`.
+- Values are typed: lists are arrays (not `;`-joined), salary amounts are
+  numbers, missing values are `null`. Descriptions only with `fields=full`
+  or on a single job. Unknown parameters are a 400.
+- No auth, CORS open to any origin, weak `ETag` (304 on `If-None-Match`) and
+  `Cache-Control: public, max-age=300`, 60 requests a minute per IP
+  (`API_RATE_LIMIT` to change; keyed on Caddy's `X-Forwarded-For`).
+- `meta.scraped_at` is the mtime of `data/scraped.json`, which only a scrape
+  writes.
+- Within v1, fields are only added; a rename or removal means `/api/v2`.
+  `/api/jobs` (untyped, every row) stays as the web app's own endpoint.
+
+The server now parses `jobs.csv` once and re-reads it only when its mtime or
+size changes, for both `/api/jobs` and `/api/v1`.
 
 ## Adding another job board
 
@@ -225,6 +255,9 @@ salary_range = "$79,200 - $90,000 per year"
 
 - `python3 -m unittest` (in `tests/`): the scrapers' clean-up,
   deduplication, typed columns, salary parsing and overrides.
+- `cd web && bun test`: the public API (`lib/api-v1.ts`, and the server's
+  CORS, ETag and rate limiting), on the browser tests' fixture below. Needs
+  `python3` with `requests`, like the browser tests.
 - `cd web && bun run test:browser` (or `bun tests/browser/run.ts grid
   corrections` for some): the web app in headless Chromium, set
   `CHROMIUM` if it isn't on the PATH as `chromium`. The runner starts the

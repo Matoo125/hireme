@@ -102,13 +102,19 @@ copy from: Algolia-backed (`eighty_thousand_hours.py`), SSR-embedded JSON
 | GET | `/api/custom-jobs` | 200, this user's custom jobs as a JSON array. Auth required. |
 | POST | `/api/custom-jobs` | Body `{link, title?, organization_name?}` → fetches the link for a title if omitted, 201 with the created `CustomJob` (or 200 with the existing one if the normalized link was already added); 400 on an invalid/non-http(s) URL. Auth required. |
 | DELETE | `/api/custom-jobs/:id` | Removes one custom job. Auth required. |
+| GET | `/api/v1/jobs` | Public. Filtered (`q`, `source`, typed tag columns, `organization`, `currency`, `period`, `salary_min`, `posted_since`, `closes_after`), sorted (`newest`/`oldest`/`closing`/`organization`), paged (`limit` ≤ 200, `offset`) jobs as typed JSON `{data, page, meta}`; descriptions only with `fields=full`; 400 `{error:{code,message}}` on an unknown or invalid param |
+| GET | `/api/v1/jobs/:id` | Public. One job with descriptions; 404 if unknown |
+| GET | `/api/v1/facets`, `/api/v1/meta` | Public. Values of each filterable field with counts; last scrape time (`data/scraped.json` mtime), totals, attribution |
+| GET | `/api/v1/openapi.json`, `/api` | Public. The v1 contract (`web/public/openapi.json`) and its docs page |
 | GET | `/*` | Static file from `web/public/`, `/` → `index.html`, 404 otherwise |
 
-`/api/jobs` and static files are unauthenticated and read-only. Every other endpoint requires a
+`/api/jobs`, `/api/v1/*` and static files are unauthenticated and read-only. `/api/v1/*` is the
+public contract (only additive changes within v1): CORS `*`, weak ETag + `Cache-Control: public,
+max-age=300`, 60 requests/minute per IP (`API_RATE_LIMIT`), 405 on anything but GET/OPTIONS. Every other endpoint requires a
 bearer JWT (`Authorization: Bearer <jwt>`), minted by `api.altfresh.sk` and verified against its
 JWKS (`verifyToken` in `server.ts`) — this spec's older "no auth, single tenant" framing predates
-that and is stale; §8 is corrected to match. `jobs.csv` is re-read from disk on every `/api/jobs`
-request (no caching), so a fresh scrape is visible without restarting the server.
+that and is stale; §8 is corrected to match. `jobs.csv` is parsed once and re-parsed when its mtime or size
+changes, so a fresh scrape or hand correction is visible without restarting the server.
 
 Frontend (`public/app.js`): client-side search, sort (newest/oldest/closing soon/org), filter by
 tag or source board, and the like/not-relevant triage state described in §3.
