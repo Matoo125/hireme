@@ -130,13 +130,12 @@ tag or source board, and the like/not-relevant triage state described in §3.
   commit is rebased on top of `origin/main` (via `git pull --rebase --autostash`) before
   pushing; if that hits a conflict the script aborts the rebase and exits non-zero so it
   shows up in `systemctl --failed`.
-- No CI, no tests, no requirements.txt / lockfile for the Python side (relies on `requests` being
-  present in the system/venv).
+- CI: GitHub Actions (`.github/workflows/ci.yml`) runs the Python unit tests, the API tests and
+  the browser tests on pushes to `main` and on PRs, skipping pushes that only touch `jobs.csv` or
+  Markdown. Python dependencies are in `requirements.txt` (only `requests`).
 
 ## 7. Known gaps
 
-- No Python dependency pinning (`requirements.txt` absent) — `pip install requests` on a fresh
-  box is undocumented.
 - Server-side `jobs.csv` vs. git `jobs.csv` can drift silently (§6) — mitigated 2026-09-08 by
   auto-committing/pushing after each scrape; any residual drift is confined to scrape/push
   failures that surface in `systemctl --failed`.
