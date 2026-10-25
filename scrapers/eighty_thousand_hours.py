@@ -33,6 +33,22 @@ def _collect_tags(hit):
     return dedup_join(values)
 
 
+# Open calls (general applications, expressions of interest, funding, courses)
+# get a placeholder posted_at in early 2022 so the board sorts them last; for
+# them created_at, when the board added the listing, is the real date. For
+# ordinary jobs the two agree (median 0 days apart, Oct 2026), and a repost
+# is posted after it was created, so only a posted_at well before created_at
+# is replaced.
+PLACEHOLDER_SLACK_SECONDS = 90 * 24 * 3600
+
+
+def _publication_date(hit):
+    posted, created = hit.get("posted_at"), hit.get("created_at")
+    if posted and created and posted < created - PLACEHOLDER_SLACK_SECONDS:
+        return to_iso_date(created)
+    return to_iso_date(posted or created)
+
+
 def _hit_to_job(hit):
     company = hit.get("company") or {}
     description = hit.get("description") or hit.get("description_short") or ""
@@ -40,7 +56,7 @@ def _hit_to_job(hit):
         "source": SOURCE_NAME,
         "title": hit.get("title", ""),
         "link": hit.get("url_external", ""),
-        "publication_date": to_iso_date(hit.get("posted_at")),
+        "publication_date": _publication_date(hit),
         "close_date": to_iso_date(hit.get("closes_at")),
         "organization_name": hit.get("company_name") or company.get("name", ""),
         "organization_url": hit.get("company_url") or company.get("url", ""),
