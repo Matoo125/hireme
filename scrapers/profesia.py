@@ -17,6 +17,11 @@ Offers come in Slovak, Czech, English or German; salary labels are rewritten
 into the English the other boards use ("Od 2 250 EUR/mesiac" -> "From 2,250
 EUR per month") so scrapers.salary reads them, and contract types into the
 job type tags of scrapers.tag_fields.
+
+Not in scrape_jobs.SCRAPERS: on its first daily run (26 Oct 2026), after ~160
+requests in two minutes, Profesia's AWS firewall started answering the
+server with a challenge (HTTP 202, empty body) for its whole site. Until
+Profesia allows it, this runs by hand only.
 """
 
 import html
