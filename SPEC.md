@@ -56,7 +56,7 @@ to the server, doesn't sync across devices, wiped on clearing site data.
 
 Logged-in users (auth via `api.altfresh.sk`, a bearer JWT verified against its JWKS — see §5) get
 server-persisted per-user data under `data/`, one JSON file per user id, created on first
-write: `cv/<id>.json`+`.pdf` (uploaded CV), `preferences/<id>.json` (liked/hidden, synced up from
+write: `cv/<id>.json`+`.pdf` (uploaded CV), `preferences/<id>.json` (liked/hidden and visit days, synced up from
 `localStorage`), `applications/<id>.json` (tracked jobs: status, notes, motivation letter), and
 `custom-jobs/<id>.json` (jobs added by link — see below), and `fit/<id>.json` (fit scores, below). None of this is checked into git or
 touched by the scrape; it's entirely separate from `jobs.csv`.
@@ -76,7 +76,15 @@ have.
 the CV PDF sent first with a cache breakpoint) into `data/fit/<id>.json`, keyed by CV hash and
 model so a new CV rescores everything. Run by `scrape_and_sync.sh` after each scrape (jobs lock
 released first); failures leave jobs unscored for the next run and make the run exit non-zero.
-The frontend shows score + reason on cards and a "Best fit for you" sort for scored users only.
+The frontend shows score + reason on cards, a Fit column in the table, and a "Best fit for you"
+sort for scored users only. That sort is their default until they pick another; in it, cards
+scoring under 40 (that aren't liked or tracked) fold into a collapsed "Probably not for you"
+group at the end.
+
+**New since your last visit**: the frontend keeps `{last, previous}` visit days (UTC) in
+`localStorage` and, logged in, in `preferences/<id>.json` as `visits` (merged across devices:
+the latest earlier-day visit wins). A job with `first_seen` after `previous` gets a "New" badge
+and appears in the "New since your last visit" view, offered from the second day of visits.
 
 ## 4. Scraping
 
@@ -110,7 +118,7 @@ copy from: Algolia-backed (`eighty_thousand_hours.py`), SSR-embedded JSON
 |---|---|---|
 | GET | `/api/jobs` | 200, full `jobs.csv` as JSON array of objects (all columns as strings); 500 `{error}` if the CSV can't be read |
 | GET/POST/DELETE | `/api/cv`, `/api/cv/file` | CV upload/download/delete (PDF, 10 MB max). Auth required. |
-| GET/PUT | `/api/preferences` | Liked/hidden id sets. Auth required. |
+| GET/PUT | `/api/preferences` | Liked/hidden id sets, plus `visits: {last, previous}` (dates; dropped if malformed). Auth required. |
 | GET, PUT/DELETE `/:jobId` | `/api/applications` | Tracked-application status/notes/letter per job. Auth required. |
 | GET | `/api/fit` | 200 `{model, scores: {jobId: {score, reason, scored_at}}}` for this user, 404 if they aren't scored. Auth required. |
 | GET | `/api/custom-jobs` | 200, this user's custom jobs as a JSON array. Auth required. |

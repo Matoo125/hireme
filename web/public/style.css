@@ -267,6 +267,43 @@ main {
   background: var(--fit-bg);
 }
 
+.sheet--grid .jss_worksheet > tbody > tr > td.fit-cell {
+  color: var(--fit-fg);
+  background: var(--fit-bg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* "Probably not for you": the fold under the good matches. */
+.low-fit-toggle {
+  display: block;
+  width: 100%;
+  padding: 0.6rem 0.9rem;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.low-fit-toggle:hover {
+  color: var(--fg);
+}
+
+.new-badge {
+  display: inline-block;
+  padding: 0 0.45em;
+  border-radius: 0.6em;
+  background: var(--accent);
+  color: var(--card-bg);
+  font-size: 0.7rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
 .fit-high { --fit-fg: #1d6b34; --fit-bg: #dff3e4; }
 .fit-mid { --fit-fg: #7a5a00; --fit-bg: #fbf0cf; }
 .fit-low { --fit-fg: #6b6b6b; --fit-bg: #eeeeee; }
