@@ -1,7 +1,8 @@
 # hireme
 
 Scrapes remote/global job listings from a handful of EA-adjacent job
-boards into one deduplicated CSV, and serves it through a minimal Bun
+boards, plus the remote-only offers of the Slovak board Profesia, into one
+deduplicated CSV, and serves it through a minimal Bun
 web app for browsing, filtering, and triaging (like / not relevant).
 
 Boards currently covered:
@@ -10,6 +11,9 @@ Boards currently covered:
 - [Probably Good](https://jobs.probablygood.org)
 - [EA Opportunities Board](https://www.effectivealtruism.org/opportunities)
 - [Animal Advocacy Careers](https://animaladvocacycareers.org/job-board/)
+- [Profesia](https://www.profesia.sk): only offers it marks as work from
+  home only ("Práca iba z domu", a few hundred of its ~14,000). It has no
+  API, so `scrapers/profesia.py` reads its list pages and each offer's page.
 
 ## Layout
 
@@ -181,8 +185,9 @@ size changes, for both `/api/jobs` and `/api/v1`.
    The columns after `tags` are derived from `tags` and `salary_range`
    by `scrape_jobs.py`; a scraper doesn't fill them in.
    Look at `scrapers/eighty_thousand_hours.py` (Algolia-backed),
-   `scrapers/ea_opportunities.py` (data embedded in SSR HTML), or
-   `scrapers/animal_advocacy_careers.py` (WordPress REST API) as
+   `scrapers/ea_opportunities.py` (data embedded in SSR HTML),
+   `scrapers/animal_advocacy_careers.py` (WordPress REST API), or
+   `scrapers/profesia.py` (plain HTML pages, no API) as
    templates depending on how the target site is built.
 2. Register it in `SCRAPERS` in `scrape_jobs.py`.
 3. Run `python3 scrape_jobs.py` and check the new source shows up with
@@ -234,7 +239,9 @@ salary text (the originals stay in `tags` and `salary_range`):
   `salary_max`, `salary_currency` and `salary_period` (hour, day, week,
   month, year, total, unpaid). The first currency mentioned wins; a
   period that isn't stated is taken as a year for amounts of 10,000 or
-  more in USD/GBP/EUR/CAD/AUD/CHF, else left empty. "Competitive" and
+  more in USD/GBP/EUR/CAD/AUD/CHF, else left empty. Profesia's Slovak
+  labels are rewritten to English by its scraper first ("Od 2 250
+  EUR/mesiac" is "From 2,250 EUR per month"). "Competitive" and
   the like leave all four empty. The scrape log prints how many salaries
   were read and how many weren't.
 

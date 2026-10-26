@@ -26,7 +26,7 @@ whenever the text doesn't say. Rules:
 import re
 
 SYMBOLS = {"£": "GBP", "€": "EUR", "A$": "AUD", "US$": "USD", "C$": "CAD"}
-CODES = {"USD", "GBP", "EUR", "CAD", "AUD", "CHF", "INR", "NGN", "KRW", "ZAR", "KES", "SGD", "NZD"}
+CODES = {"USD", "GBP", "EUR", "CAD", "AUD", "CHF", "CZK", "INR", "NGN", "KRW", "ZAR", "KES", "SGD", "NZD"}
 YEARLY_CURRENCIES = {"USD", "GBP", "EUR", "CAD", "AUD", "CHF"}
 
 _MULTIPLIERS = {"k": 1_000, "m": 1_000_000, "million": 1_000_000, "mn": 1_000_000}

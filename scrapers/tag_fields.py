@@ -31,6 +31,8 @@ _TABLE = {
         "Full-time": ["Full-time"],
         "Part-time": ["Part-time", "Part-Time (50–80% FTE)", "Part-Time (<50% FTE)"],
         "Internship": ["Internship"],
+        "Contractor": ["Contractor"],
+        "Temporary": ["Temporary"],
         "Fellowship": ["Fellowship"],
         "Volunteer": ["Volunteer", "Volunteering"],
         "Course": ["Course"],
