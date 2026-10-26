@@ -9,7 +9,8 @@ default.
 
 Readings are kept in data/europe.json, keyed by job id with a hash of the
 text read, so a job is read again only when that text changes (its posting
-fetched at last, say) or the model does. Jobs no longer listed are dropped.
+fetched at last, say) or the model does. A change to SYSTEM applies to jobs
+read from then on; earlier readings are kept. Jobs no longer listed are dropped.
 Without ANTHROPIC_API_KEY nothing new is read and jobs keep earlier readings.
 
     python3 -m scrapers.europe          # read what's missing for jobs.csv
@@ -39,8 +40,13 @@ authorization, could be hired for this role and do it:
   or the employer says it sponsors visas / helps relocate.
 - "no": it requires living or being authorized to work outside Europe (e.g. US work
   authorization, US-based only, on-site in a non-European city with no sponsorship),
-  or working hours that rule out European time zones.
-- "unclear": the posting doesn't say enough to tell.
+  or working hours that rule out European time zones. Remote limited to the US (or
+  another non-European country), or pay stated only for candidates based there,
+  counts as "no" even when Europe isn't mentioned.
+- "unclear": the posting doesn't say enough to tell. Use it only when the role is
+  on-site or hybrid somewhere outside Europe without saying whether it sponsors
+  visas, or the posting gives no work arrangement at all.
+A remote role that names no location or work authorization limits is "yes".
 
 Give a reason of at most 15 words, quoting the deciding requirement when there is one."""
 
