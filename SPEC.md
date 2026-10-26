@@ -125,7 +125,8 @@ redirect, since the links come from third-party boards and this runs on the web 
 and 20 s per page; postings shorter than 500 characters count as unread and are fetched again
 after 7 days. About 72% of postings are read (Google Forms, Airtable and logins aren't). Then
 `scrapers/europe.py` reads every job whose text changed since its last reading into
-`data/europe.json` (keyed by id, text hash and model; unlisted ids dropped) and sets `europe`,
+`data/europe.json` (keyed by id, text hash and model; unlisted ids dropped; a prompt change
+applies to new readings only) and sets `europe`,
 `europe_reason`. Without `ANTHROPIC_API_KEY` nothing new is read. Fetch or read failures are
 problems (non-zero exit) but `jobs.csv` is still written. `fit_scores.py` reads the same full
 postings.
