@@ -132,6 +132,22 @@ describe("queryJobs", () => {
     expect(() => queryJobs(seen, new URLSearchParams("new_since=last week"))).toThrow("new_since");
   });
 
+  test("europe: the verdict and reason, filterable", () => {
+    const read = [
+      { id: "a", europe: "yes", europe_reason: "Remote worldwide" },
+      { id: "b", europe: "no", europe_reason: "US work authorization required" },
+      { id: "c", europe: "unclear", europe_reason: "" },
+      { id: "d", europe: "", europe_reason: "" },
+    ];
+    const ids = (q: string) => queryJobs(read, new URLSearchParams(q)).data.map((j: any) => j.id).sort();
+    expect(ids("europe=yes&europe=unclear")).toEqual(["a", "c"]);
+    expect((queryJobs(read, new URLSearchParams("europe=no")).data[0] as any).europe)
+      .toEqual({ verdict: "no", reason: "US work authorization required" });
+    expect((toJob(read[3], false) as any).europe).toEqual({ verdict: null, reason: null });
+    expect(() => ids("europe=maybe")).toThrow("europe must be one of");
+    expect(facets(read).europe.map((f) => f.value).sort()).toEqual(["no", "unclear", "yes"]);
+  });
+
   test("sort=closing puts dated jobs first, soonest first", () => {
     const closes = query("sort=closing&limit=200").data.map((j: any) => j.closes);
     const dated = closes.filter(Boolean);

@@ -161,6 +161,24 @@
             "explode": true
           },
           {
+            "name": "europe",
+            "in": "query",
+            "description": "Whether someone living in Europe can take the job, read from the full posting: yes, no or unclear. Repeat to allow several.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "yes",
+                  "no",
+                  "unclear"
+                ]
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
             "name": "salary_min",
             "in": "query",
             "description": "Keep jobs whose salary.max (or salary.min if no max) is at least this. Excludes jobs with no parsed salary.",
@@ -524,6 +542,20 @@
                               }
                             }
                           }
+                        },
+                        "europe": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "string"
+                              },
+                              "count": {
+                                "type": "integer"
+                              }
+                            }
+                          }
                         }
                       }
                     },
@@ -794,6 +826,31 @@
             "type": "array",
             "items": {
               "type": "string"
+            }
+          },
+          "europe": {
+            "type": "object",
+            "description": "Whether someone living in Europe, with EU citizenship only, can be hired for and do this job, as Claude read it from the full posting (or the board's summary when the posting couldn't be fetched). Null until read.",
+            "properties": {
+              "verdict": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "yes",
+                  "no",
+                  "unclear",
+                  null
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The deciding requirement, in at most about 15 words."
+              }
             }
           },
           "corrected": {

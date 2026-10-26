@@ -14,7 +14,9 @@ HTML_TAG_RE = re.compile(r"<[^>]+>")
 # post-merge record, not something individual board scrapers set), and
 # the columns from "salary_min" on are derived after merging, from
 # salary_range (scrapers.salary) and tags (scrapers.tag_fields);
-# "corrected" names the columns overrides.toml set (scrapers.overrides).
+# "europe" and "europe_reason" are read from the full posting by Claude
+# (scrapers.europe); "corrected" names the columns overrides.toml set
+# (scrapers.overrides).
 FIELDNAMES = [
     "id",
     "source",
@@ -40,6 +42,8 @@ FIELDNAMES = [
     "cause_area",
     "skills",
     "other_tags",
+    "europe",
+    "europe_reason",
     "corrected",
 ]
 

@@ -35,7 +35,9 @@ a point-in-time snapshot, overwritten by each scrape run. Columns (`scrapers/com
 ```
 id, source, title, link, publication_date, close_date, first_seen,
 organization_name, organization_url, organization_description,
-description, salary_range, tags
+description, salary_range, tags, salary_min, salary_max, salary_currency,
+salary_period, job_type, experience, education, location, cause_area,
+skills, other_tags, europe, europe_reason, corrected
 ```
 
 - `id`: 12-char MD5 prefix of a stable identity key (normalized link, or normalized
@@ -48,6 +50,14 @@ description, salary_range, tags
   value is 2026-07-31 (when ids were introduced). Exposed in `/api/v1` with a `new_since` filter.
 - `source`, `tags`: `;`-joined lists, since a job can be cross-posted and tagged from multiple
   boards.
+- `europe`, `europe_reason`: whether someone living in Europe (EU citizenship, no other work
+  authorization) can be hired for and do the job — `yes` / `no` / `unclear` plus a reason of
+  about 15 words quoting the deciding requirement — read by `claude-haiku-5-5` (low effort,
+  structured output) from the full posting (`scrapers/europe.py`, §4), or from `description`
+  when the posting couldn't be read. Empty until read. Correctable in `overrides.toml` like any
+  column. Exposed in `/api/v1` as `europe: {verdict, reason}` with a `europe` filter. The
+  frontend leaves `no` jobs out of All jobs / New unless "Show N not open to Europe" is on
+  (remembered per browser); liked, hidden and tracked views always show them.
 - Currently 538 rows / 4 boards (80,000 Hours, Probably Good, EA Opportunities Board, Animal
   Advocacy Careers).
 
@@ -106,6 +116,19 @@ results, then `dedupe.merge_duplicates()`:
   of a silently "successful" run that quietly lost a board. With `HEALTHCHECK_URL` set,
   `scrape_and_sync.sh` also pings Healthchecks.io (start, then exit status + log), which alerts on
   a failed, hung or missing run (§6).
+
+**Postings and the Europe check**: after history, `scrapers/postings.py` fetches each job's
+original posting not fetched yet into `data/postings/<id>.json` (`{link, fetched_at, status,
+text}`): the page's readable text, or its schema.org JobPosting description when longer;
+public Google Docs via their plain-text export. Public addresses only (checked on every
+redirect, since the links come from third-party boards and this runs on the web server); 3 MB
+and 20 s per page; postings shorter than 500 characters count as unread and are fetched again
+after 7 days. About 72% of postings are read (Google Forms, Airtable and logins aren't). Then
+`scrapers/europe.py` reads every job whose text changed since its last reading into
+`data/europe.json` (keyed by id, text hash and model; unlisted ids dropped) and sets `europe`,
+`europe_reason`. Without `ANTHROPIC_API_KEY` nothing new is read. Fetch or read failures are
+problems (non-zero exit) but `jobs.csv` is still written. `fit_scores.py` reads the same full
+postings.
 
 Adding a board = new `scrapers/<name>.py` with `fetch_jobs()` returning `FIELDNAMES`-shaped
 dicts, registered in `SCRAPERS` in `scrape_jobs.py`. Three existing implementation patterns to
@@ -171,9 +194,12 @@ tag or source board, and the like/not-relevant triage state described in §3.
 
 ## 8. Non-goals (current scope)
 
-- Hiding jobs automatically: fit scores rank and explain, the user still decides.
+- Hiding jobs automatically by fit: fit scores rank and explain, the user still decides. (Jobs
+  not open to Europe are left out by default, but one click shows them.)
 - Any board beyond the four listed in §1 — Profesia specifically is mentioned in
   the original notes but not implemented.
 - Real-time/on-demand scraping (only the daily timer).
 - Automated metadata beyond a best-effort title fetch for custom jobs — no description/org/salary
-  scraping for user-added links, unlike the board scrapers in §4.
+  scraping or Europe check for user-added links, unlike the board scrapers in §4.
+- Salary figures from the full postings: a 60-posting trial (2026-10-26) found the boards
+  already carry nearly every salary the postings state.

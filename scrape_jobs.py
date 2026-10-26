@@ -13,7 +13,9 @@ common schema, cleaned up where boards spell the same tag or organization
 differently (scrapers/normalize.py), then merged and deduplicated
 (scrapers/dedupe.py) since the same role is often cross-posted to more
 than one board. Each job gets the date it was first seen, from the daily
-snapshots in data/history/ (scrapers/history.py). The result is kept in
+snapshots in data/history/ (scrapers/history.py). Each new job's original
+posting is fetched (scrapers/postings.py) and read by Claude for whether
+someone living in Europe can take it (scrapers/europe.py). The result is kept in
 data/scraped.json, then hand
 corrections from overrides.toml are applied (scrapers/overrides.py), the
 tags sorted into typed columns (scrapers/tag_fields.py) and the salary
@@ -30,6 +32,8 @@ from scrapers import (
     animal_advocacy_careers,
     ea_opportunities,
     eighty_thousand_hours,
+    europe,
+    postings,
     probably_good,
 )
 from scrapers.dedupe import merge_duplicates
@@ -100,6 +104,22 @@ def main():
         # first_seen left empty.
         print(f"  history not recorded: {exc}", file=sys.stderr)
         problems.append(f"history: {exc!r}")
+
+    data_dir = Path(args.scraped).parent
+    try:
+        fetched, read = postings.fetch_missing(merged, data_dir / "postings", today)
+        print(f"Postings fetched: {fetched}, read: {read} (the rest are retried in {postings.RETRY_DAYS} days)")
+        read, failed, skipped = europe.annotate(merged, data_dir, today)
+        open_to = {v: sum(1 for j in merged if j["europe"] == v) for v in europe.VERDICTS}
+        print(f"Open to Europe: {open_to}; read now: {read}, failed: {failed}"
+              + (f", not read (no ANTHROPIC_API_KEY): {skipped}" if skipped else ""))
+        if failed:
+            problems.append(f"europe: {failed} postings not read (retried next run)")
+    except Exception as exc:
+        # Like history: jobs.csv is still written, with europe left empty
+        # for jobs not read before.
+        print(f"  postings or europe not read: {exc}", file=sys.stderr)
+        problems.append(f"postings/europe: {exc!r}")
     save_scraped(args.scraped, merged)
 
     try:
