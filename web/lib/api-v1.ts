@@ -13,9 +13,11 @@ const TAG_FIELDS = ["job_type", "experience", "education", "location", "cause_ar
 
 const LIST_PARAMS = new Set([
   "q", "source", "organization", "currency", "period", ...TAG_FIELDS,
-  "salary_min", "posted_since", "new_since", "closes_after", "sort", "fields", "limit", "offset",
+  "europe", "salary_min", "posted_since", "new_since", "closes_after", "sort", "fields", "limit", "offset",
 ]);
 const SORTS = ["newest", "oldest", "closing", "organization"] as const;
+/** Whether someone living in Europe can take the job (scrapers/europe.py). */
+const EUROPE = ["yes", "no", "unclear"];
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -67,6 +69,7 @@ export function toJob(row: Row, full: boolean) {
     ...Object.fromEntries(TAG_FIELDS.map((f) => [f, list(row[f])])),
     other_tags: list(row.other_tags),
     tags: list(row.tags),
+    europe: { verdict: text(row.europe), reason: text(row.europe_reason) },
     corrected: list(row.corrected),
     links: { self: `/api/v1/jobs/${encodeURIComponent(row.id)}` },
   };
@@ -122,7 +125,11 @@ export function queryJobs(rows: Row[], params: URLSearchParams) {
       .map(([column, param]): [string, Set<string>] => [column, new Set(params.getAll(param))])
       .filter(([, values]) => values.size > 0);
   const listFilters = wanted([["source", "source"], ...TAG_FIELDS.map((f): [string, string] => [f, f])]);
+  for (const v of params.getAll("europe")) {
+    if (!EUROPE.includes(v)) throw new BadRequest(`europe must be one of ${EUROPE.join(", ")}`);
+  }
   const exactFilters = wanted([
+    ["europe", "europe"],
     ["organization_name", "organization"],
     ["salary_currency", "currency"],
     ["salary_period", "period"],
@@ -194,6 +201,7 @@ export function facets(rows: Row[]) {
     organization: count(single("organization_name")),
     currency: count(single("salary_currency")),
     period: count(single("salary_period")),
+    europe: count(single("europe")),
   };
 }
 

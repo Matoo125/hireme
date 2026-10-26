@@ -274,6 +274,17 @@ main {
   font-variant-numeric: tabular-nums;
 }
 
+/* Shown only when "not open to Europe" jobs are let in. */
+.job-europe {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  color: #a4372a;
+}
+
+@media (prefers-color-scheme: dark) {
+  .job-europe { color: #f09a8e; }
+}
+
 /* "Probably not for you": the fold under the good matches. */
 .low-fit-toggle {
   display: block;

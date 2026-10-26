@@ -6,7 +6,9 @@ For each user id in FIT_USER_IDS (comma-separated, or --users) who has
 uploaded a CV (data/cv/<id>.pdf), every job without a score gets one: 0-100
 and a one-sentence reason, kept in data/fit/<id>.json and served to that user
 by the web app (GET /api/fit). Only new jobs are scored on a normal day; a new
-CV rescores everything. Scores of jobs no longer listed are dropped.
+CV rescores everything. Scores of jobs no longer listed are dropped. Each job
+is read in full: its original posting (scrapers/postings.py) when it could be
+fetched, else the board's summary.
 
 The CV goes first in each request with a cache breakpoint, so after the first
 job it's read from the prompt cache at a tenth of the price.
@@ -30,7 +32,12 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
+from scrapers import postings
+
 MODEL = "claude-haiku-5-5"
+# Bumped when what the model reads about a job changes, to rescore everything:
+# 2 = the full posting instead of the board's summary.
+INPUT_VERSION = 2
 SAVE_EVERY = 20
 
 SYSTEM = """You help one job seeker decide which job listings are worth their time.
@@ -60,17 +67,20 @@ def score_schema():
     return Fit
 
 
-def job_text(job):
+def job_text(job, posting=""):
+    """The listing as the model reads it; `posting` is the full posting's
+    text (scrapers/postings.py), used instead of the board's summary."""
     lines = [f"Title: {job['title']}", f"Organization: {job['organization_name']}"]
     for label, field in [
         ("About the organization", "organization_description"),
         ("Type", "job_type"), ("Experience", "experience"), ("Education", "education"),
         ("Location", "location"), ("Cause area", "cause_area"), ("Skills", "skills"),
         ("Salary", "salary_range"), ("Closes", "close_date"),
-        ("Description", "description"),
-    ]:
+    ] + ([] if posting else [("Description", "description")]):
         if job.get(field, "").strip():
             lines.append(f"{label}: {job[field].strip()}")
+    if posting:
+        lines.append(f"Full posting:\n{posting}")
     return "\n".join(lines)
 
 
@@ -90,8 +100,9 @@ def write_json(path, data):
 
 
 class Scorer:
-    def __init__(self, client, cv_pdf):
+    def __init__(self, client, cv_pdf, postings_dir=None):
         self.client = client
+        self.postings_dir = postings_dir
         self.cv_block = {
             "type": "document",
             "source": {"type": "base64", "media_type": "application/pdf",
@@ -102,6 +113,9 @@ class Scorer:
         self.fit = score_schema()
         self.usage = {"input": 0, "cache_read": 0, "cache_write": 0, "output": 0}
 
+    def posting(self, job):
+        return postings.text_of(self.postings_dir, job["id"]) if self.postings_dir else ""
+
     def score(self, job):
         """{score, reason} for one job, or None if the model declined."""
         response = self.client.messages.parse(
@@ -111,7 +125,7 @@ class Scorer:
             output_config={"effort": "low"},
             messages=[{"role": "user", "content": [
                 self.cv_block,
-                {"type": "text", "text": f"Job listing:\n\n{job_text(job)}"},
+                {"type": "text", "text": f"Job listing:\n\n{job_text(job, self.posting(job))}"},
             ]}],
             output_format=self.fit,
         )
@@ -137,7 +151,8 @@ def score_user(user_id, jobs, data_dir, dry_run=False, workers=4, client=None):
     cv_hash = hashlib.sha256(cv_pdf).hexdigest()
     fit_path = data_dir / "fit" / f"{user_id}.json"
     saved = read_json(fit_path, {})
-    scores = saved.get("scores", {}) if saved.get("cv") == cv_hash and saved.get("model") == MODEL else {}
+    current = saved.get("cv") == cv_hash and saved.get("model") == MODEL and saved.get("input") == INPUT_VERSION
+    scores = saved.get("scores", {}) if current else {}
     listed = {job["id"] for job in jobs}
     scores = {i: s for i, s in scores.items() if i in listed}
     todo = [job for job in jobs if job["id"] not in scores]
@@ -145,16 +160,16 @@ def score_user(user_id, jobs, data_dir, dry_run=False, workers=4, client=None):
           + (" (new CV)" if saved and saved.get("cv") != cv_hash else ""))
     if dry_run or not todo:
         if not dry_run:
-            write_json(fit_path, {"cv": cv_hash, "model": MODEL, "scores": scores})
+            write_json(fit_path, {"cv": cv_hash, "model": MODEL, "input": INPUT_VERSION, "scores": scores})
         return 0, 0
 
     import anthropic
-    scorer = Scorer(client or anthropic.Anthropic(), cv_pdf)
+    scorer = Scorer(client or anthropic.Anthropic(), cv_pdf, data_dir / "postings")
     failed = 0
     done = 0
 
     def save():
-        write_json(fit_path, {"cv": cv_hash, "model": MODEL, "scores": scores})
+        write_json(fit_path, {"cv": cv_hash, "model": MODEL, "input": INPUT_VERSION, "scores": scores})
 
     def run(job):
         try:

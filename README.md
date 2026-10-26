@@ -17,6 +17,8 @@ Boards currently covered:
 scrapers/          one module per job board, each exposing fetch_jobs()
   common.py        shared helpers (FIELDNAMES schema, HTML stripping, Algolia paging)
   dedupe.py         cross-board duplicate merging + stable per-job id
+  postings.py      fetches each job's full original posting into data/postings/
+  europe.py        Claude reads each posting: can someone living in Europe take it?
 scrape_jobs.py     orchestrates all scrapers, dedupes, writes jobs.csv
 jobs.csv           output of the last scrape run (committed as a snapshot)
 web/
@@ -254,6 +256,33 @@ jobs listed before 2026-07-31 show that date. To rebuild it by hand:
 `python3 -m scrapers.history backfill`. Like the rest of `data/`, history
 lives only on the server, at roughly 100 kB a day.
 
+## Full postings and the Europe check
+
+The boards give a summary of each job; the posting behind its link has the
+rest. Each scrape fetches the posting of every new job into
+`data/postings/<id>.json` (`scrapers/postings.py`): the page's text, or the
+schema.org JobPosting description it embeds when that's longer (how Ashby
+pages are read), and public Google Docs as plain text. Only public addresses
+are fetched. Postings that can't be read (Google Forms, Airtable, logins) are
+tried again after a week; about 72% are read.
+
+Then Claude (`claude-haiku-5-5`, `scrapers/europe.py`) reads each new or
+changed posting, or the board's summary when it couldn't be read, and decides
+whether someone living in Europe with EU citizenship can take the job:
+`yes`, `no` or `unclear`, with a short reason ("Posting states: only
+considering applicants based in North America"). These go into `jobs.csv` as
+`europe` and `europe_reason`, into the API as `europe` (filter with
+`europe=yes`), and into the site: jobs marked `no` are left out unless you
+click "Show N not open to Europe", the table has a Europe column, and admins
+can correct a verdict there (it goes to `overrides.toml`). Readings are kept
+in `data/europe.json`, so a job is read once; the first run over ~530 jobs
+costs about $0.20, a normal day well under a cent. Without
+`ANTHROPIC_API_KEY` the scrape keeps earlier readings and reads nothing new.
+
+By hand: `python3 -m scrapers.postings` fetches what's missing for
+`jobs.csv`, `python3 -m scrapers.europe` reads it (the next scrape puts the
+readings into `jobs.csv`).
+
 ## Fit scores
 
 `fit_scores.py` scores how well each job fits a user's CV with Claude
@@ -264,6 +293,8 @@ on each card, a Fit column in the table, and a "Best fit for you" sort
 fold into "Probably not for you" at the end, unless you've liked or tracked
 them. Everyone else sees no change.
 
+- What it reads: the job's full posting when it could be fetched (above),
+  else the board's summary.
 - Who gets scored: the user ids in `FIT_USER_IDS` (comma-separated) who have
   uploaded a CV. Your id is the `sub` of your altfresh login.
 - `scrape_and_sync.sh` runs it after each scrape when `FIT_USER_IDS` is set,

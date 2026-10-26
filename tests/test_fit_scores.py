@@ -96,6 +96,27 @@ class ScoreUser(unittest.TestCase):
         self.assertEqual(self.run_user(jobs("Analyst"), client, user="8"), (0, 0))
         self.assertEqual(client.calls, [])
 
+    def test_full_posting_replaces_the_summary(self):
+        (self.data / "postings").mkdir()
+        posting = "Full text of the posting. " * 30
+        (self.data / "postings" / "analyst.json").write_text(json.dumps({"link": "x", "text": posting}))
+        client = FakeClient()
+        self.run_user(jobs("Analyst", "Lead"), client)
+        texts = {c["messages"][0]["content"][1]["text"].split("Title: ")[1].split("\n")[0]:
+                 c["messages"][0]["content"][1]["text"] for c in client.calls}
+        self.assertIn(f"Full posting:\n{posting.strip()}", texts["Analyst"])
+        self.assertNotIn("Description:", texts["Analyst"])
+        self.assertIn("Description: About Lead", texts["Lead"])
+
+    def test_older_scores_rescored_once(self):
+        fit_scores.write_json(self.data / "fit" / "7.json", {
+            "cv": __import__("hashlib").sha256(b"%PDF-1.4 my cv").hexdigest(), "model": fit_scores.MODEL,
+            "scores": {"analyst": {"score": 50, "reason": "old"}}})
+        client = FakeClient()
+        self.run_user(jobs("Analyst"), client)
+        self.assertEqual(len(client.calls), 1)
+        self.assertEqual(self.saved()["input"], fit_scores.INPUT_VERSION)
+
     def test_dry_run_calls_nothing_and_writes_nothing(self):
         with contextlib.redirect_stdout(io.StringIO()) as out:
             fit_scores.score_user("7", jobs("Analyst"), self.data, dry_run=True, client=FakeClient())

@@ -51,6 +51,7 @@ import tomllib
 from pathlib import Path
 
 from scrapers.common import FIELDNAMES
+from scrapers.europe import VERDICTS as EUROPE_VERDICTS
 from scrapers.salary import parse_salary
 from scrapers.tag_fields import FIELDS, classify_tags
 
@@ -267,6 +268,9 @@ def clean_value(field, value):
     if field == "salary_period":
         if value not in PERIODS:
             raise OverridesError(f"{field}: expected one of {', '.join(sorted(PERIODS))}, got {value!r}")
+    if field == "europe":
+        if value not in EUROPE_VERDICTS:
+            raise OverridesError(f"{field}: expected one of {', '.join(EUROPE_VERDICTS)}, got {value!r}")
     return value
 
 

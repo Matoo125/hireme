@@ -329,6 +329,25 @@ function isNew(job) {
   return Boolean(visits.previous && job.first_seen && job.first_seen > visits.previous);
 }
 
+// ── Open to Europe ───────────────────────────────────────────────────────────
+//
+// Jobs someone living in Europe can't take (europe "no", read from the full
+// posting by scrapers/europe.py) are left out unless asked for, remembered
+// per browser. The liked, hidden and tracked views show them anyway: you put
+// them there.
+
+const EUROPE_KEY = "jobBoard.includeNotEurope";
+const europeToggleEl = document.getElementById("europeToggle");
+let includeNotEurope = localStorage.getItem(EUROPE_KEY) === "1";
+
+function europeFilterApplies() {
+  return !["liked", "hidden", "tracked"].includes(viewEl.value);
+}
+
+function matchesEurope(job) {
+  return includeNotEurope || job.europe !== "no" || !europeFilterApplies();
+}
+
 // ── Application tracker state ───────────────────────────────────────────────
 
 const APPS_KEY = "jobBoard.applications";
@@ -1036,6 +1055,12 @@ function jobCard(job) {
     fitEl.append(badge, ` ${fit.reason}`);
     titleWrap.appendChild(fitEl);
   }
+  if (job.europe === "no") {
+    const europeEl = document.createElement("p");
+    europeEl.className = "job-europe";
+    europeEl.textContent = `Not open to Europe${job.europe_reason ? `: ${job.europe_reason}` : ""}`;
+    titleWrap.appendChild(europeEl);
+  }
 
   const meta = document.createElement("div");
   meta.className = "job-meta";
@@ -1284,6 +1309,7 @@ const TYPED_COLUMNS = [
   ["skills", "Skills", 170],
   ["education", "Education", 150],
 ];
+const EUROPE_VERDICTS = ["yes", "no", "unclear"];
 const PERIOD_LABELS = {
   year: "per year", month: "per month", week: "per week", day: "per day",
   hour: "per hour", total: "one-off", unpaid: "unpaid",
@@ -1299,6 +1325,7 @@ const CORRECTABLE = {
   organization: "organization_name",
   posted: "publication_date",
   closes: "close_date",
+  europe: "europe",
   ...Object.fromEntries(TYPED_COLUMNS.map(([name]) => [name, name])),
   salary: "salary_range",
   salary_min: "salary_min",
@@ -1333,6 +1360,7 @@ function sheetColumns() {
     { key: "source", label: "Board", value: (j) => splitSources(j).join(", ") },
     { key: "publication_date", label: "Posted", className: "col-date", value: (j) => j.publication_date || "" },
     { key: "close_date", label: "Closes", className: "col-date", value: (j) => j.close_date || "" },
+    { key: "europe", label: "Europe", value: (j) => j.europe || "" },
     ...TYPED_COLUMNS.map(([key, label]) => ({ key, label, className: "col-tags", value: (j) => splitList(j[key]).join(", ") })),
     { key: "salary_range", label: "Salary", value: (j) => j.salary_range || "" },
     { key: "salary_min", label: "Min", className: "col-date", value: (j) => j.salary_min || "" },
@@ -1483,7 +1511,7 @@ const BOOL = (value) => value === true || value === "true" || value === 1 || val
 /** Column name → picked values. "" stands for a blank cell. */
 const gridFilters = new Map();
 const FILTERABLE = new Set([
-  "liked", "hidden", "title", "status", "organization", "board", "posted", "closes",
+  "liked", "hidden", "title", "status", "organization", "board", "posted", "closes", "europe",
   ...TYPED_COLUMNS.map(([name]) => name), "salary", "salary_currency", "salary_period", "other_tags",
 ]);
 const yesNo = (on) => (on ? "Yes" : "No");
@@ -1500,6 +1528,7 @@ function filterValues(job, name) {
     case "board": return orBlank(splitSources(job));
     case "posted": return [job.publication_date || ""];
     case "closes": return [job.close_date || ""];
+    case "europe": return [job.europe || ""];
     case "salary": return [job.salary_range || ""];
     case "salary_currency": return [job.salary_currency || ""];
     case "salary_period": return [periodLabel(job)];
@@ -1605,6 +1634,10 @@ function buildGrid(lib, list) {
   const payCell = (cell, value) => {
     cell.textContent = formatPay(value);
   };
+  const europeCell = (cell, value, x, y, instance) => {
+    const job = byId.get(instance.getValueFromCoords(0, y));
+    if (job?.europe_reason) cell.title = job.europe_reason;
+  };
   // The score in its band's colours, the reason on hover.
   const fitCell = (cell, value, x, y, instance) => {
     cell.classList.remove("fit-high", "fit-mid", "fit-low");
@@ -1647,6 +1680,11 @@ function buildGrid(lib, list) {
     { name: "board", title: "Board", readOnly: true, width: 150 },
     { name: "posted", title: "Posted", readOnly: true, width: 92 },
     { name: "closes", title: "Closes", readOnly: true, width: 92 },
+    // yes / no / unclear, the reason on hover; admins correct it from a dropdown.
+    {
+      name: "europe", title: "Europe", width: 84, render: europeCell,
+      ...(admin ? { type: "dropdown", source: ["", ...EUROPE_VERDICTS] } : { readOnly: true }),
+    },
     ...TYPED_COLUMNS.map(([name, title, width]) => (admin
       ? { name, title, width, type: "dropdown", multiple: true, autocomplete: true, source: valuesOf(name) }
       : { name, title, readOnly: true, width, render: fullTextTitle })),
@@ -1687,6 +1725,7 @@ function buildGrid(lib, list) {
       board: splitSources(job).join(", "),
       posted: job.publication_date || "",
       closes: job.close_date || "",
+      europe: job.europe || "",
       salary: job.salary_range || "",
       salary_min: job.salary_min === "" || job.salary_min == null ? "" : Number(job.salary_min),
       salary_max: job.salary_max === "" || job.salary_max == null ? "" : Number(job.salary_max),
@@ -1899,13 +1938,18 @@ function downloadCsv() {
 function render() {
   const term = searchEl.value.trim().toLowerCase();
   const table = layoutEl.value === "table";
-  const base = jobs.filter(
+  const unfiltered = jobs.filter(
     (j) =>
       matchesSearch(j, term) &&
       matchesActiveTags(j) &&
       matchesActiveSources(j) &&
       matchesView(j, viewEl.value)
   );
+  const base = unfiltered.filter(matchesEurope);
+  const notEurope = unfiltered.filter((j) => j.europe === "no").length;
+  europeToggleEl.hidden = !notEurope || !europeFilterApplies();
+  europeToggleEl.setAttribute("aria-pressed", String(includeNotEurope));
+  europeToggleEl.textContent = `${includeNotEurope ? "Hide" : "Show"} ${notEurope} not open to Europe`;
   gridBase = table ? base : [];
   const filtered = table && gridFilters.size ? base.filter((j) => matchesGridFilters(j)) : base;
   const sorted = sortJobs(filtered, sortEl.value);
@@ -1979,6 +2023,13 @@ sortEl.addEventListener("change", () => {
   render();
 });
 viewEl.addEventListener("change", render);
+europeToggleEl.addEventListener("click", () => {
+  includeNotEurope = !includeNotEurope;
+  try {
+    localStorage.setItem(EUROPE_KEY, includeNotEurope ? "1" : "0");
+  } catch {}
+  render();
+});
 layoutEl.addEventListener("change", () => {
   localStorage.setItem(LAYOUT_KEY, layoutEl.value);
   // Keep a ?layout=table link pointing at the layout actually shown.
