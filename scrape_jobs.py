@@ -7,6 +7,7 @@ into a single deduplicated CSV:
   - Probably Good  https://jobs.probablygood.org
   - EA Opportunities Board  https://www.effectivealtruism.org/opportunities
   - Animal Advocacy Careers  https://animaladvocacycareers.org/job-board/
+  - Profesia (remote only)  https://www.profesia.sk
 
 Each board is scraped by its own module in scrapers/, normalized to a
 common schema, cleaned up where boards spell the same tag or organization
@@ -35,6 +36,7 @@ from scrapers import (
     europe,
     postings,
     probably_good,
+    profesia,
 )
 from scrapers.dedupe import merge_duplicates
 from scrapers.history import record
@@ -47,6 +49,7 @@ SCRAPERS = [
     ("Probably Good", probably_good.fetch_jobs),
     ("EA Opportunities Board", ea_opportunities.fetch_jobs),
     ("Animal Advocacy Careers", animal_advocacy_careers.fetch_jobs),
+    ("Profesia", profesia.fetch_jobs),
 ]
 
 

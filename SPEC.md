@@ -5,14 +5,16 @@ today. If code and spec disagree after a change, update the spec in the same PR.
 
 ## 1. Purpose
 
-Scrapes remote/global job listings from EA-adjacent job boards into one deduplicated CSV, served
+Scrapes remote/global job listings from EA-adjacent job boards, plus Profesia's remote-only offers,
+into one deduplicated CSV, served
 through a minimal read-only web app for browsing, filtering, and personal triage (like / not
 relevant).
 
 **Divergence from original intent**: the original intent notes (never part of this repo, not implemented)
 describes a richer version of this — job descriptions read and triaged automatically ("decide
 whether it should be added to our database"), PostgreSQL storage, and Profesia as a covered board.
-None of that exists yet. The implemented system is simpler: static scrape → CSV → manual
+Profesia (remote-only offers) and automatic reading of postings (§4) have since been added; the
+rest doesn't exist yet. The implemented system is simpler: static scrape → CSV → manual
 like/hide in the browser. Treat those notes as backlog/intent, not spec — this file
 documents what's actually running.
 
@@ -58,8 +60,8 @@ skills, other_tags, europe, europe_reason, corrected
   column. Exposed in `/api/v1` as `europe: {verdict, reason}` with a `europe` filter. The
   frontend leaves `no` jobs out of All jobs / New unless "Show N not open to Europe" is on
   (remembered per browser); liked, hidden and tracked views always show them.
-- Currently 538 rows / 4 boards (80,000 Hours, Probably Good, EA Opportunities Board, Animal
-  Advocacy Careers).
+- About 790 rows / 5 boards (80,000 Hours, Probably Good, EA Opportunities Board, Animal
+  Advocacy Careers, Profesia — the last ~265 of them, remote-only offers).
 
 Per-user like/not-relevant state lives only in browser `localStorage` on the client — never sent
 to the server, doesn't sync across devices, wiped on clearing site data.
@@ -101,6 +103,12 @@ and appears in the "New since your last visit" view, offered from the second day
 `scrape_jobs.py` runs each board's `fetch_jobs()` (imported from `scrapers/`), concatenates
 results, then `dedupe.merge_duplicates()`:
 
+- Profesia (`scrapers/profesia.py`) has no API: it reads the list pages of offers marked work
+  from home only (`/praca/?remote_work=1`, until a page has no new offers, at most 50) and each
+  offer's page (4 at a time) for the date posted, the og:description summary, the contract type
+  (mapped to job types Full-time / Part-time / Contractor / Temporary / Internship) and the
+  employer's description. An offer page that fails to load keeps its list entry. Salary labels
+  are rewritten to English for `scrapers/salary.py`; `location` is always Remote.
 - Two listings are the same job if their links match after stripping query strings/UTM
   params/scheme/trailing slash, **or** their normalized org name + title match (catches
   boards that wrap links in their own tracking redirect).
@@ -197,8 +205,8 @@ tag or source board, and the like/not-relevant triage state described in §3.
 
 - Hiding jobs automatically by fit: fit scores rank and explain, the user still decides. (Jobs
   not open to Europe are left out by default, but one click shows them.)
-- Any board beyond the four listed in §1 — Profesia specifically is mentioned in
-  the original notes but not implemented.
+- Any board beyond the five in §3, and Profesia's on-site or partly remote offers (~13,500,
+  mostly retail, manufacturing and logistics).
 - Real-time/on-demand scraping (only the daily timer).
 - Automated metadata beyond a best-effort title fetch for custom jobs — no description/org/salary
   scraping or Europe check for user-added links, unlike the board scrapers in §4.
