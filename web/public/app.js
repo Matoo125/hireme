@@ -277,6 +277,58 @@ function saveIdSet(key, set) {
 const likedJobs = loadIdSet(LIKED_KEY);
 const hiddenJobs = loadIdSet(HIDDEN_KEY);
 
+// ── New since your last visit ───────────────────────────────────────────────
+//
+// A job is new when the scrape first found it (first_seen) after the last
+// day you visited before today. Days rather than times, because first_seen
+// is a date: the badges stay put all day and move on the next. Kept like
+// liked/hidden: in localStorage, and synced with the preferences when
+// logged in, so a visit on your phone counts on your laptop too.
+
+const VISITS_KEY = "jobBoard.visits";
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** UTC, like the scrape's first_seen dates. */
+function todayUTC() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** {last, previous} with today's visit counted: previous is the last day before today. */
+function rollVisits(visits, today = todayUTC()) {
+  const last = DATE_RE.test(visits?.last) ? visits.last : null;
+  const previous = DATE_RE.test(visits?.previous) ? visits.previous : null;
+  if (!last) return { last: today, previous: null };
+  if (last < today) return { last: today, previous: last };
+  return { last, previous };
+}
+
+/** Two devices' visits as one: the latest earlier-day visit on either. */
+function mergeVisits(a, b) {
+  const x = rollVisits(a);
+  const y = rollVisits(b);
+  const previous = [x.previous, y.previous].filter(Boolean).sort().pop() || null;
+  return { last: x.last > y.last ? x.last : y.last, previous };
+}
+
+function loadVisits() {
+  try {
+    return rollVisits(JSON.parse(localStorage.getItem(VISITS_KEY) || "null"));
+  } catch {
+    return rollVisits(null);
+  }
+}
+
+function saveVisits() {
+  localStorage.setItem(VISITS_KEY, JSON.stringify(visits));
+}
+
+let visits = loadVisits();
+saveVisits();
+
+function isNew(job) {
+  return Boolean(visits.previous && job.first_seen && job.first_seen > visits.previous);
+}
+
 // ── Application tracker state ───────────────────────────────────────────────
 
 const APPS_KEY = "jobBoard.applications";
@@ -312,8 +364,23 @@ const applications = loadAppsFromStorage();
 const fitScores = new Map();
 const fitSortOption = document.querySelector('#sort option[value="fit_desc"]');
 
+// Below this, a job folds into "Probably not for you" when sorting by fit:
+// the "poor match" band of fit_scores.py's scale.
+const LOW_FIT = 40;
+// Set once you pick a sort yourself; until then best fit is the default
+// for an account with scores.
+let sortChosen = false;
+// The folded jobs are shown (and built) only once asked for.
+let showLowFit = false;
+
 function fitBand(score) {
-  return score >= 70 ? "high" : score >= 40 ? "mid" : "low";
+  return score >= 70 ? "high" : score >= LOW_FIT ? "mid" : "low";
+}
+
+/** Folded when sorting by fit, unless you've liked or tracked it. */
+function isLowFit(job) {
+  const fit = fitScores.get(job.id);
+  return Boolean(fit && fit.score < LOW_FIT && !likedJobs.has(job.id) && !applications.has(job.id));
 }
 
 async function loadFit() {
@@ -326,6 +393,7 @@ async function loadFit() {
     fitScores.clear();
     for (const [id, entry] of Object.entries(scores || {})) fitScores.set(id, entry);
     fitSortOption.hidden = fitScores.size === 0;
+    if (fitScores.size && !sortChosen) sortEl.value = "fit_desc";
     render();
   } catch {}
 }
@@ -610,6 +678,7 @@ async function savePreferences() {
       body: JSON.stringify({
         liked: [...likedJobs],
         hidden: [...hiddenJobs],
+        visits,
       }),
     });
   } catch {}
@@ -630,8 +699,12 @@ async function loadPreferences() {
       for (const id of data.hidden || []) hiddenJobs.add(id);
       saveIdSet(LIKED_KEY, likedJobs);
       saveIdSet(HIDDEN_KEY, hiddenJobs);
+      const merged = mergeVisits(visits, data.visits);
+      visits = merged;
+      saveVisits();
+      if (JSON.stringify(merged) !== JSON.stringify(data.visits)) savePreferences();
       render();
-    } else if (res.status === 404 && (likedJobs.size || hiddenJobs.size)) {
+    } else if (res.status === 404) {
       savePreferences();
     }
   } catch {}
@@ -741,6 +814,8 @@ function matchesView(job, mode) {
       return hiddenJobs.has(job.id);
     case "tracked":
       return applications.has(job.id);
+    case "new":
+      return isNew(job) && !hiddenJobs.has(job.id);
     case "all":
     default:
       return !hiddenJobs.has(job.id);
@@ -927,6 +1002,13 @@ function jobCard(job) {
   titleLink.rel = "noopener noreferrer";
   titleLink.textContent = job.title || "Untitled role";
   title.appendChild(titleLink);
+  if (isNew(job)) {
+    const badge = document.createElement("span");
+    badge.className = "new-badge";
+    badge.textContent = "New";
+    badge.title = `First seen ${job.first_seen}, since your last visit on ${visits.previous}`;
+    title.append(" ", badge);
+  }
   titleWrap.appendChild(title);
 
   const org = document.createElement("p");
@@ -1127,9 +1209,14 @@ function renderViewOptions() {
   const likedCount = jobs.filter((j) => likedJobs.has(j.id) && !hiddenJobs.has(j.id)).length;
   const hiddenCount = jobs.filter((j) => hiddenJobs.has(j.id)).length;
   const trackedCount = jobs.filter((j) => applications.has(j.id)).length;
-  viewEl.options[1].textContent = `Liked (${likedCount})`;
-  viewEl.options[2].textContent = `Not relevant (${hiddenCount})`;
-  viewEl.options[3].textContent = `Tracked (${trackedCount})`;
+  const newCount = jobs.filter((j) => isNew(j) && !hiddenJobs.has(j.id)).length;
+  const option = (value) => viewEl.querySelector(`option[value="${value}"]`);
+  option("liked").textContent = `Liked (${likedCount})`;
+  option("hidden").textContent = `Not relevant (${hiddenCount})`;
+  option("tracked").textContent = `Tracked (${trackedCount})`;
+  // Offered from the second day you visit: before that nothing can be new.
+  option("new").textContent = `New since your last visit (${newCount})`;
+  option("new").hidden = !visits.previous;
 }
 
 function updateDescriptionToggles() {
@@ -1259,6 +1346,12 @@ function sheetColumns() {
     columns.splice(2, 0, {
       key: "status", label: "Status",
       value: (j) => STATUS_LABELS[applications.get(j.id)?.status] || "",
+    });
+  }
+  if (fitScores.size) {
+    columns.splice(2, 0, {
+      key: "fit", label: "Fit", className: "col-date",
+      value: (j) => String(fitScores.get(j.id)?.score ?? ""),
     });
   }
   return columns;
@@ -1512,6 +1605,15 @@ function buildGrid(lib, list) {
   const payCell = (cell, value) => {
     cell.textContent = formatPay(value);
   };
+  // The score in its band's colours, the reason on hover.
+  const fitCell = (cell, value, x, y, instance) => {
+    cell.classList.remove("fit-high", "fit-mid", "fit-low");
+    cell.removeAttribute("title");
+    if (value === "" || value == null) return;
+    cell.classList.add("fit-cell", `fit-${fitBand(Number(value))}`);
+    const fit = fitScores.get(instance.getValueFromCoords(0, y));
+    if (fit) cell.title = fit.reason;
+  };
   // A hand-corrected cell gets a corner mark (for admins, right-click undoes it).
   const markCorrected = (render) => (cell, value, x, y, instance) => {
     cell.removeAttribute("title");
@@ -1533,6 +1635,7 @@ function buildGrid(lib, list) {
     { name: "liked", title: "★", type: "checkbox", width: 36 },
     { name: "hidden", title: "✕", type: "checkbox", width: 36 },
     { name: "title", title: "Title", readOnly: true, width: 280, render: linkCell("link") },
+    ...(fitScores.size ? [{ name: "fit", title: "Fit", readOnly: true, width: 56, align: "right", render: fitCell }] : []),
     ...(loggedIn ? [
       {
         name: "status", title: "Status", type: "dropdown", width: 120,
@@ -1577,6 +1680,7 @@ function buildGrid(lib, list) {
       liked: likedJobs.has(job.id),
       hidden: hiddenJobs.has(job.id),
       title: job.title || "Untitled role",
+      fit: fitScores.get(job.id)?.score ?? "",
       status: app?.status || "",
       notes: app?.notes || "",
       organization: job.organization_name || "",
@@ -1831,8 +1935,26 @@ function render() {
   }
   destroyGrid();
   sheetEl.replaceChildren();
-  for (const job of sorted) {
+  // Sorted by fit, poor matches fold away below the rest ("For you").
+  const fold = sortEl.value === "fit_desc";
+  const low = fold ? sorted.filter(isLowFit) : [];
+  for (const job of fold ? sorted.filter((j) => !isLowFit(j)) : sorted) {
     jobsEl.appendChild(jobCard(job));
+  }
+  if (low.length) {
+    const shown = sorted.length - low.length;
+    countEl.textContent = `${shown} job${shown === 1 ? "" : "s"} + ${low.length} probably not`;
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "low-fit-toggle";
+    toggle.setAttribute("aria-expanded", String(showLowFit));
+    toggle.textContent = `${showLowFit ? "▾" : "▸"} Probably not for you (${low.length}): scored below ${LOW_FIT}`;
+    toggle.addEventListener("click", () => {
+      showLowFit = !showLowFit;
+      render();
+    });
+    jobsEl.appendChild(toggle);
+    if (showLowFit) for (const job of low) jobsEl.appendChild(jobCard(job));
   }
   requestAnimationFrame(updateDescriptionToggles);
 }
@@ -1853,6 +1975,7 @@ async function init() {
 searchEl.addEventListener("input", render);
 sortEl.addEventListener("change", () => {
   tableSort = null;
+  sortChosen = true;
   render();
 });
 viewEl.addEventListener("change", render);

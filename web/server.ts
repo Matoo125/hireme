@@ -517,7 +517,10 @@ Bun.serve({
         const body = await req.json();
         const liked = Array.isArray(body.liked) ? body.liked : [];
         const hidden = Array.isArray(body.hidden) ? body.hidden : [];
-        const data = { liked, hidden };
+        // The last two days the user visited, for "new since your last visit".
+        const date = (v: unknown) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+        const visits = { last: date(body.visits?.last), previous: date(body.visits?.previous) };
+        const data = { liked, hidden, ...(visits.last ? { visits } : {}) };
         await mkdir(PREFS_DIR, { recursive: true });
         await Bun.write(prefsPath(user.id), JSON.stringify(data));
         return Response.json(data);

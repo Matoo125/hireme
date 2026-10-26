@@ -103,6 +103,10 @@ are plain textareas.
   and is wiped if you clear site data. It survives re-scrapes because
   each job gets a stable `id` (hashed from its normalized link, or
   org+title as a fallback) computed in `scrapers/dedupe.py`.
+- **New since your last visit**: jobs the scrape first found (`first_seen`)
+  after the last day you visited before today get a "New" badge, and the
+  view dropdown gets a "New since your last visit" view. Visit days are kept
+  in `localStorage` and, when logged in, with your preferences on the server.
 - **Table layout**: the Cards/Table dropdown (or a `?layout=table` link)
   shows the same filtered list as a spreadsheet grid -
   [Jspreadsheet CE](https://github.com/jspreadsheet/ce) (MIT), which
@@ -255,8 +259,10 @@ lives only on the server, at roughly 100 kB a day.
 `fit_scores.py` scores how well each job fits a user's CV with Claude
 (`claude-haiku-5-5`, low effort): 0-100 plus one sentence, kept in
 `data/fit/<userId>.json`. Signed-in users with scores get the score and reason
-on each card and a "Best fit for you" sort (`GET /api/fit`); everyone else sees
-no change.
+on each card, a Fit column in the table, and a "Best fit for you" sort
+(`GET /api/fit`), which is their default. Sorted by fit, jobs scoring under 40
+fold into "Probably not for you" at the end, unless you've liked or tracked
+them. Everyone else sees no change.
 
 - Who gets scored: the user ids in `FIT_USER_IDS` (comma-separated) who have
   uploaded a CV. Your id is the `sub` of your altfresh login.
