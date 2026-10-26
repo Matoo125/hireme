@@ -6,7 +6,7 @@ const cell = (name, y = 0) => grid.getCellFromCoords(cx(name), y);
 const total = grid.getData().length;
 
 check("logged-out columns", JSON.stringify(heads()) === JSON.stringify([
-  "★", "✕", "Title", "Organization", "Board", "Posted", "Closes", "Type", "Experience", "Location",
+  "★", "✕", "Title", "Organization", "Board", "Posted", "Closes", "Europe", "Type", "Experience", "Location",
   "Cause area", "Skills", "Education", "Salary", "Min", "Max", "Currency", "Period", "Other tags", "Description",
 ]), JSON.stringify(heads()));
 check("row count = count line", `${total} jobs` === document.getElementById("count").textContent, total);
