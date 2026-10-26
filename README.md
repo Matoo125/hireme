@@ -1,8 +1,7 @@
 # hireme
 
 Scrapes remote/global job listings from a handful of EA-adjacent job
-boards, plus the remote-only offers of the Slovak board Profesia, into one
-deduplicated CSV, and serves it through a minimal Bun
+boards into one deduplicated CSV, and serves it through a minimal Bun
 web app for browsing, filtering, and triaging (like / not relevant).
 
 Boards currently covered:
@@ -11,9 +10,10 @@ Boards currently covered:
 - [Probably Good](https://jobs.probablygood.org)
 - [EA Opportunities Board](https://www.effectivealtruism.org/opportunities)
 - [Animal Advocacy Careers](https://animaladvocacycareers.org/job-board/)
-- [Profesia](https://www.profesia.sk): only offers it marks as work from
-  home only ("Práca iba z domu", a few hundred of its ~14,000). It has no
-  API, so `scrapers/profesia.py` reads its list pages and each offer's page.
+
+`scrapers/profesia.py` reads [Profesia](https://www.profesia.sk)'s offers
+marked work from home only (a few hundred of its ~14,000), but isn't run:
+Profesia's firewall blocked the server during its first daily scrape.
 
 ## Layout
 
@@ -239,9 +239,7 @@ salary text (the originals stay in `tags` and `salary_range`):
   `salary_max`, `salary_currency` and `salary_period` (hour, day, week,
   month, year, total, unpaid). The first currency mentioned wins; a
   period that isn't stated is taken as a year for amounts of 10,000 or
-  more in USD/GBP/EUR/CAD/AUD/CHF, else left empty. Profesia's Slovak
-  labels are rewritten to English by its scraper first ("Od 2 250
-  EUR/mesiac" is "From 2,250 EUR per month"). "Competitive" and
+  more in USD/GBP/EUR/CAD/AUD/CHF, else left empty. "Competitive" and
   the like leave all four empty. The scrape log prints how many salaries
   were read and how many weren't.
 

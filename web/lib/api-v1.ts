@@ -5,8 +5,8 @@
 export const API_VERSION = "1";
 
 export const SOURCES_NOTE =
-  "Listings come from 80,000 Hours, Probably Good, the EA Opportunities Board, " +
-  "Animal Advocacy Careers and Profesia. Please link to each job's original posting (url).";
+  "Listings come from 80,000 Hours, Probably Good, the EA Opportunities Board and " +
+  "Animal Advocacy Careers. Please link to each job's original posting (url).";
 
 /** Typed tag columns (scrapers/tag_fields.py), filterable and faceted. */
 const TAG_FIELDS = ["job_type", "experience", "education", "location", "cause_area", "skills"] as const;

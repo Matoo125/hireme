@@ -3,7 +3,7 @@
   "info": {
     "title": "hireme jobs API",
     "version": "1",
-    "description": "Read-only, public API over the deduplicated job list at hireme.sk, refreshed daily. No authentication. CORS open to any origin. 60 requests per minute per IP. Responses carry a weak ETag and Cache-Control: public, max-age=300. Within v1, fields are only added, never renamed or removed. Listings come from 80,000 Hours, Probably Good, the EA Opportunities Board, Animal Advocacy Careers and Profesia; please link to each job's original posting (url)."
+    "description": "Read-only, public API over the deduplicated job list at hireme.sk, refreshed daily. No authentication. CORS open to any origin. 60 requests per minute per IP. Responses carry a weak ETag and Cache-Control: public, max-age=300. Within v1, fields are only added, never renamed or removed. Listings come from 80,000 Hours, Probably Good, the EA Opportunities Board and Animal Advocacy Careers; please link to each job's original posting (url)."
   },
   "servers": [
     {
