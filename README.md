@@ -320,6 +320,26 @@ them. Everyone else sees no change.
   anything; `--evaluate` compares the scores with your liked and hidden jobs
   (the roadmap's bar: at least half of what you'd hide scored below 40).
 
+## Portfolio pages
+
+A signed-in user can publish a page built from their CV at `<slug>.hireme.sk`.
+It's opt-in: the page stays off until they turn it on in the web app, and turning
+it off takes it down (the address stays theirs).
+
+- `pages_cv.py --user <id>` reads the uploaded CV with Claude and writes
+  `data/page-content/<id>.json`: name, headline, summary, skills, experience,
+  education, projects and the links the CV gives. It never includes contact
+  details, and it runs only when the CV has changed. The server runs it
+  after an upload, and after the page is turned on.
+- Deleting the CV deletes the page's content.
+- The server answers `<slug>.hireme.sk` with the page, and everything else
+  on that host with 404.
+
+By hand: `python3 pages_cv.py --user <id> --dry-run` says whether the page
+would be remade, and `python3 -m unittest tests.test_pages_cv` tests the
+extraction with a stand-in for Claude. Setup needs a wildcard DNS record and
+certificate (see `SPEC.md` §6).
+
 ## Hand corrections
 
 When a board gets a job wrong (a stale close date, a salary in the wrong
