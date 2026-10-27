@@ -39,6 +39,19 @@
       <p id="cvStatus" class="cv-status" hidden></p>
     </div>
 
+    <div id="pageSection" class="cv-section" hidden>
+      <label class="cv-page-toggle">
+        <input id="pageEnabled" type="checkbox" />
+        Publish a page built from my CV
+      </label>
+      <form id="pageForm" class="add-job-form">
+        <input id="pageSlug" type="text" placeholder="your-name" maxlength="40" autocomplete="off" />
+        <span>.hireme.sk</span>
+        <button type="submit" class="auth-btn auth-btn--small">Save address</button>
+      </form>
+      <p id="pageInfo" class="cv-status" hidden></p>
+    </div>
+
     <div id="addJobSection" class="cv-section" hidden>
       <form id="addJobForm" class="add-job-form">
         <input id="addJobLink" type="url" placeholder="Paste a job link…" required />

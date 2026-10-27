@@ -69,8 +69,10 @@ Logged-in users (auth via `api.altfresh.sk`, a bearer JWT verified against its J
 server-persisted per-user data under `data/`, one JSON file per user id, created on first
 write: `cv/<id>.json`+`.pdf` (uploaded CV), `preferences/<id>.json` (liked/hidden and visit days, synced up from
 `localStorage`), `applications/<id>.json` (tracked jobs: status, notes, motivation letter), and
-`custom-jobs/<id>.json` (jobs added by link — see below), and `fit/<id>.json` (fit scores, below). None of this is checked into git or
+`custom-jobs/<id>.json` (jobs added by link — see below), `fit/<id>.json` (fit scores, below), `pages/<id>.json` (portfolio page settings) and `page-content/<id>.json` (the page's text, made from the CV, below). None of this is checked into git or
 touched by the scrape; it's entirely separate from `jobs.csv`.
+
+**Portfolio pages** (opt-in): a logged-in user can publish a page at `<slug>.hireme.sk`, built from their CV. `pages_cv.py` (run by the server for one user at a time, the way `scrapers.overrides` is) reads the CV with `claude-haiku-5-5` into `page-content/<id>.json`: name, headline, summary, skills, experience, education, projects, and the links the CV itself gives. Its schema has no contact fields and its prompt forbids them. Content is remade only when the CV's hash changes. A CV upload while the page is on regenerates it; deleting the CV deletes the content. Turning the page off keeps the address and content, so turning it back on needs no new run. Addresses are 3–40 letters, digits and hyphens, not reserved (`web/lib/pages.ts`), and held by one user at a time, including while their page is off. The page is HTML with inline styles only: values are escaped, and only http(s) links are kept.
 
 **Custom (user-added) jobs**: a logged-in user can paste a job link and the server fetches it
 (via `web/lib/fetch-page.ts`, SSRF-guarded) to fill in a title from `og:title`/`<title>`,
@@ -153,6 +155,8 @@ copy from: Algolia-backed (`eighty_thousand_hours.py`), SSR-embedded JSON
 | GET/PUT | `/api/preferences` | Liked/hidden id sets, plus `visits: {last, previous}` (dates; dropped if malformed). Auth required. |
 | GET, PUT/DELETE `/:jobId` | `/api/applications` | Tracked-application status/notes/letter per job. Auth required. |
 | GET | `/api/fit` | 200 `{model, scores: {jobId: {score, reason, scored_at}}}` for this user, 404 if they aren't scored. Auth required. |
+| GET/PUT | `/api/page` | GET → `{enabled, slug, url, status, generatedAt}`; `status` is `off`, `no-cv`, `generating`, `ready` or `pending` (content not yet made from the current CV). PUT `{enabled, slug?}` turns the page on or off and sets its address: 400 on a bad address or body, 409 if another user holds it. Auth required. |
+| any | `<slug>.hireme.sk/` | Not the API: Host routing. The published page for that slug; 404 if it's off, has no content yet, or the path isn't `/`. Other paths on that host are never the job board. |
 | GET | `/api/custom-jobs` | 200, this user's custom jobs as a JSON array. Auth required. |
 | POST | `/api/custom-jobs` | Body `{link, title?, organization_name?}` → fetches the link for a title if omitted, 201 with the created `CustomJob` (or 200 with the existing one if the normalized link was already added); 400 on an invalid/non-http(s) URL. Auth required. |
 | DELETE | `/api/custom-jobs/:id` | Removes one custom job. Auth required. |
@@ -188,6 +192,12 @@ tag or source board, and the like/not-relevant triage state described in §3.
   `scrape_and_sync.sh` pings Healthchecks.io at `/start` and at `/<exit status>` with the last
   100 kB of the log; the check (cron `0 6 * * *`, 1 h grace) emails on a failed, hung or missing
   run. Ping failures are logged and never fail the run. Unset = no pings.
+- **Portfolio pages** need a wildcard DNS record `*.hireme.sk` pointing at the server and a wildcard
+  certificate. Caddy only issues wildcard certificates through a DNS challenge, so the site block
+  is `*.hireme.sk { tls { dns <provider> } reverse_proxy localhost:4020 }`, with that provider's
+  Caddy plugin. Without it a page subdomain gets a certificate error. `pages_cv.py` needs
+  `ANTHROPIC_API_KEY` in the server's environment, as `fit_scores.py` does for the timer.
+  `PAGES_DOMAIN` (default `hireme.sk`) and `DATA_DIR` (default `data/`) override the defaults.
 - CI: GitHub Actions (`.github/workflows/ci.yml`) runs the Python unit tests, the API tests and
   the browser tests on pushes to `main` and on PRs, skipping pushes that only touch `jobs.csv` or
   Markdown. Python dependencies are in `requirements.txt` (only `requests`).

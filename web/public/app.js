@@ -75,6 +75,7 @@ function updateAuthUI() {
   const userInfo = document.getElementById("userInfo");
   const userName = document.getElementById("userName");
   const cvSection = document.getElementById("cvSection");
+  const pageSection = document.getElementById("pageSection");
   const addJobSection = document.getElementById("addJobSection");
 
   if (isLoggedIn()) {
@@ -82,12 +83,15 @@ function updateAuthUI() {
     userInfo.hidden = false;
     userName.textContent = getUser() || "User";
     cvSection.hidden = false;
+    pageSection.hidden = false;
     addJobSection.hidden = false;
     loadCvInfo();
+    loadPageInfo();
   } else {
     loginBtn.hidden = false;
     userInfo.hidden = true;
     cvSection.hidden = true;
+    pageSection.hidden = true;
     addJobSection.hidden = true;
   }
 }
@@ -151,6 +155,7 @@ async function uploadCv() {
     document.getElementById("cvUploadBtn").disabled = true;
     setTimeout(() => { cvStatus.hidden = true; }, 2500);
     await loadCvInfo();
+    loadPageInfo();
   } catch (err) {
     cvStatus.textContent = err.message;
     cvStatus.className = "cv-status cv-status--error";
@@ -189,8 +194,94 @@ async function deleteCv() {
     });
     if (!res.ok) throw new Error("Delete failed");
     document.getElementById("cvInfo").hidden = true;
+    loadPageInfo();
   } catch (err) {
     alert(err.message);
+  }
+}
+
+// ── Portfolio page ───────────────────────────────────────────────────────────
+
+const PAGE_STATUS_TEXT = {
+  off: "Your page is off. Turn it on to publish one built from your CV.",
+  "no-cv": "Upload a CV first. Your page is made from it.",
+  generating: "Making your page from your CV…",
+  pending: "Your page is being updated…",
+};
+
+let pagePolls = 0;
+
+function showPage(page) {
+  const pageEnabled = document.getElementById("pageEnabled");
+  const pageSlug = document.getElementById("pageSlug");
+  const pageInfo = document.getElementById("pageInfo");
+
+  pageEnabled.checked = page.enabled;
+  if (!pageSlug.matches(":focus")) pageSlug.value = page.slug;
+  pageInfo.className = "cv-status";
+  pageInfo.hidden = false;
+  if (page.status === "ready") {
+    pageInfo.innerHTML = "";
+    const link = document.createElement("a");
+    link.href = page.url;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = page.url;
+    pageInfo.append("Your page is live at ", link);
+  } else {
+    pageInfo.textContent = PAGE_STATUS_TEXT[page.status] ?? "";
+  }
+
+  // The page is made in the background: check back until it's ready (about a minute at most).
+  if (page.status === "generating" || page.status === "pending") {
+    if (pagePolls++ < 20) setTimeout(loadPageInfo, 3000);
+  } else {
+    pagePolls = 0;
+  }
+}
+
+function showPageError(message) {
+  const pageInfo = document.getElementById("pageInfo");
+  pageInfo.hidden = false;
+  pageInfo.textContent = message;
+  pageInfo.className = "cv-status cv-status--error";
+}
+
+async function loadPageInfo() {
+  try {
+    const jwt = await getJwt();
+    const res = await fetch("/api/page", {
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+    if (!res.ok) throw new Error("Failed to load your page");
+    showPage(await res.json());
+  } catch (err) {
+    if (err.message === "Session expired") logout();
+  }
+}
+
+async function savePage(e) {
+  e?.preventDefault();
+  const pageEnabled = document.getElementById("pageEnabled");
+  const pageSlug = document.getElementById("pageSlug");
+  try {
+    const jwt = await getJwt();
+    const res = await fetch("/api/page", {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ enabled: pageEnabled.checked, slug: pageSlug.value.trim() }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Save failed");
+    pagePolls = 0;
+    showPage(data);
+  } catch (err) {
+    // Show what the server has, then say why the change didn't go through.
+    await loadPageInfo();
+    showPageError(err.message);
   }
 }
 
@@ -204,6 +295,8 @@ document.getElementById("cvDelete").addEventListener("click", deleteCv);
 document.getElementById("cvFile").addEventListener("change", (e) => {
   document.getElementById("cvUploadBtn").disabled = !e.target.files.length;
 });
+document.getElementById("pageEnabled").addEventListener("change", savePage);
+document.getElementById("pageForm").addEventListener("submit", savePage);
 
 // ── Job board ────────────────────────────────────────────────────────────────
 

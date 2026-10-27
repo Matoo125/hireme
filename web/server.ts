@@ -7,17 +7,24 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 import { fetchPage, FetchError } from "./lib/fetch-page";
 import { parseRows } from "./lib/csv";
 import { handleV1 } from "./lib/api-v1";
+import {
+  cvHash, findPage, readContent, readSettings, removeContent, renderNotFound, renderPage,
+  slugFromHost, slugOwner, slugProblem, writeSettings, type PageSettings,
+} from "./lib/pages";
 
 const PORT = Number(process.env.PORT ?? 4020);
 const ROOT = import.meta.dir;
 const PUBLIC_DIR = path.join(ROOT, "public");
 const CSV_PATH = process.env.JOBS_CSV ?? path.join(ROOT, "..", "jobs.csv");
-const CV_DIR = path.join(ROOT, "..", "data", "cv");
-const PREFS_DIR = path.join(ROOT, "..", "data", "preferences");
-const APPS_DIR = path.join(ROOT, "..", "data", "applications");
-const CUSTOM_JOBS_DIR = path.join(ROOT, "..", "data", "custom-jobs");
+const DATA_DIR = process.env.DATA_DIR ?? path.join(ROOT, "..", "data");
+const CV_DIR = path.join(DATA_DIR, "cv");
+const PREFS_DIR = path.join(DATA_DIR, "preferences");
+const APPS_DIR = path.join(DATA_DIR, "applications");
+const CUSTOM_JOBS_DIR = path.join(DATA_DIR, "custom-jobs");
 // Written by fit_scores.py after each scrape; read-only here.
-const FIT_DIR = process.env.FIT_DIR ?? path.join(ROOT, "..", "data", "fit");
+const FIT_DIR = process.env.FIT_DIR ?? path.join(DATA_DIR, "fit");
+// Portfolio pages are served at <slug>.<PAGES_DOMAIN> (lib/pages.ts).
+const PAGES_DOMAIN = (process.env.PAGES_DOMAIN ?? "hireme.sk").toLowerCase();
 
 const MAX_CV_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -156,6 +163,72 @@ async function readCvMeta(userId: number): Promise<CvMeta | null> {
   const file = Bun.file(cvMetaPath(userId));
   if (!(await file.exists())) return null;
   return file.json();
+}
+
+// ── Portfolio page helpers ───────────────────────────────────────────────────
+
+// pages_cv.py makes one user's content at a time. A CV uploaded while a run is
+// going asks for another run when it finishes, so the content never stays
+// made from the old CV.
+const pageJobs = new Set<number>();
+const pageRerun = new Set<number>();
+
+function startPageContent(userId: number): void {
+  if (pageJobs.has(userId)) {
+    pageRerun.add(userId);
+    return;
+  }
+  pageJobs.add(userId);
+  const finish = () => {
+    pageJobs.delete(userId);
+    if (pageRerun.delete(userId)) startPageContent(userId);
+  };
+  try {
+    const proc = Bun.spawn(
+      ["python3", "pages_cv.py", "--user", String(userId), "--data-dir", DATA_DIR],
+      { cwd: REPO_DIR, stdout: "pipe", stderr: "pipe" }
+    );
+    Promise.all([new Response(proc.stderr).text(), proc.exited])
+      .then(([stderr, code]) => {
+        if (code !== 0) console.error(`Page content for user ${userId} failed: ${stderr.trim()}`);
+      })
+      .finally(finish);
+  } catch (exc) {
+    console.error(`Page content for user ${userId} could not start: ${exc}`);
+    finish();
+  }
+}
+
+async function pageStatus(userId: number, settings: PageSettings | null) {
+  const pdf = Bun.file(cvPdfPath(userId));
+  const content = await readContent(DATA_DIR, userId);
+  let status: "off" | "no-cv" | "generating" | "ready" | "pending";
+  if (!settings?.enabled) status = "off";
+  else if (!(await pdf.exists())) status = "no-cv";
+  else if (pageJobs.has(userId)) status = "generating";
+  else if (content && content.cv === cvHash(new Uint8Array(await pdf.arrayBuffer()))) status = "ready";
+  else status = "pending";
+  return {
+    enabled: settings?.enabled ?? false,
+    slug: settings?.slug ?? "",
+    url: settings?.enabled ? `https://${settings.slug}.${PAGES_DOMAIN}/` : null,
+    status,
+    generatedAt: content?.generatedAt ?? null,
+  };
+}
+
+const PAGE_HEADERS = {
+  "Content-Type": "text/html; charset=utf-8",
+  // A page is text and inline styles only: nothing from elsewhere runs or loads.
+  "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  "X-Content-Type-Options": "nosniff",
+  "Cache-Control": "public, max-age=300",
+};
+
+async function servePage(slug: string, req: Request): Promise<Response> {
+  const page = new URL(req.url).pathname === "/" ? await findPage(DATA_DIR, slug) : null;
+  if (!page) return new Response(renderNotFound(), { status: 404, headers: PAGE_HEADERS });
+  return new Response(renderPage(page.content, slug), { headers: PAGE_HEADERS });
 }
 
 // ── Preferences helpers ──────────────────────────────────────────────────────
@@ -320,6 +393,10 @@ Bun.serve({
   async fetch(req, server) {
     const url = new URL(req.url);
 
+    // ── Portfolio pages: <slug>.hireme.sk ──────────────────────────────────
+    const pageSlug = slugFromHost(req.headers.get("host"), PAGES_DOMAIN);
+    if (pageSlug) return servePage(pageSlug, req);
+
     // ── Jobs API ───────────────────────────────────────────────────────────
     if (url.pathname === "/api/jobs") {
       try {
@@ -459,6 +536,7 @@ Bun.serve({
           uploadedAt: new Date().toISOString(),
         };
         await Bun.write(cvMetaPath(user.id), JSON.stringify(meta));
+        if ((await readSettings(DATA_DIR, user.id))?.enabled) startPageContent(user.id);
         return Response.json(meta);
       }
 
@@ -487,6 +565,8 @@ Bun.serve({
       if (url.pathname === "/api/cv" && req.method === "DELETE") {
         try { await unlink(cvPdfPath(user.id)); } catch {}
         try { await unlink(cvMetaPath(user.id)); } catch {}
+        // The page was made from this CV; take its content down with it.
+        await removeContent(DATA_DIR, user.id);
         return Response.json({ ok: true });
       }
 
@@ -698,6 +778,47 @@ Bun.serve({
       if (!(await file.exists())) return Response.json({ error: "No fit scores" }, { status: 404 });
       const { model, scores } = await file.json();
       return Response.json({ model, scores });
+    }
+
+    // ── Portfolio page settings ────────────────────────────────────────────
+    if (url.pathname === "/api/page") {
+      let user: { id: number; username: string | null };
+      try {
+        user = await verifyToken(req.headers.get("authorization"));
+      } catch {
+        return Response.json({ error: "unauthorized" }, { status: 401 });
+      }
+
+      if (req.method === "GET") {
+        return Response.json(await pageStatus(user.id, await readSettings(DATA_DIR, user.id)));
+      }
+
+      // PUT {enabled, slug?}: turn the page on or off, optionally choosing its address.
+      if (req.method === "PUT") {
+        const body = await req.json().catch(() => null);
+        if (typeof body?.enabled !== "boolean") {
+          return Response.json({ error: "enabled must be true or false" }, { status: 400 });
+        }
+        const current = await readSettings(DATA_DIR, user.id);
+        const slug = typeof body.slug === "string" ? body.slug.trim().toLowerCase() : (current?.slug ?? "");
+        if (!slug && body.enabled) {
+          return Response.json({ error: "Choose an address for your page" }, { status: 400 });
+        }
+        if (slug) {
+          const problem = slugProblem(slug);
+          if (problem) return Response.json({ error: problem }, { status: 400 });
+          const owner = await slugOwner(DATA_DIR, slug);
+          if (owner !== null && owner !== user.id) {
+            return Response.json({ error: "That address is taken" }, { status: 409 });
+          }
+        }
+        const settings: PageSettings = { enabled: body.enabled, slug, updatedAt: new Date().toISOString() };
+        await writeSettings(DATA_DIR, user.id, settings);
+        if (settings.enabled && (await Bun.file(cvPdfPath(user.id)).exists())) startPageContent(user.id);
+        return Response.json(await pageStatus(user.id, settings));
+      }
+
+      return new Response("Method not allowed", { status: 405 });
     }
 
     // ── Editor bundle ──────────────────────────────────────────────────────
