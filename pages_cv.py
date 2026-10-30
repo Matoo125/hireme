@@ -119,6 +119,14 @@ def make_content(client, cv_pdf):
     return response.parsed_output.model_dump()
 
 
+def current_cv_hash(cv_path):
+    """sha256 hex of the CV as it is on disk now, or None if it has been removed."""
+    try:
+        return hashlib.sha256(Path(cv_path).read_bytes()).hexdigest()
+    except FileNotFoundError:
+        return None
+
+
 def make_user_page(user_id, data_dir, dry_run=False, client=None):
     """Write data/page-content/<id>.json if the user's page is on and its content
     is out of date. Returns True if content was written (or would be, on a dry run)."""
@@ -145,6 +153,12 @@ def make_user_page(user_id, data_dir, dry_run=False, client=None):
         import anthropic
         client = anthropic.Anthropic()
     content = make_content(client, cv_pdf)
+    # The CV can be deleted or replaced while the model reads it. Write only if
+    # it is still the one the content was made from; otherwise the web app has
+    # already queued another run (or the content should not exist at all).
+    if current_cv_hash(cv_path) != cv_hash:
+        print(f"User {user_id}: CV changed or was removed while making the page; not saved")
+        return False
     write_json(content_path, {
         "cv": cv_hash,
         "model": MODEL,
