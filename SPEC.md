@@ -69,8 +69,10 @@ Logged-in users (auth via `api.altfresh.sk`, a bearer JWT verified against its J
 server-persisted per-user data under `data/`, one JSON file per user id, created on first
 write: `cv/<id>.json`+`.pdf` (uploaded CV), `preferences/<id>.json` (liked/hidden and visit days, synced up from
 `localStorage`), `applications/<id>.json` (tracked jobs: status, notes, motivation letter), and
-`custom-jobs/<id>.json` (jobs added by link — see below), `fit/<id>.json` (fit scores, below), `pages/<id>.json` (portfolio page settings), `feeds/<id>.json` (job feed token, below), `digests/<id>.json` (email digest, below) and `page-content/<id>.json` (the page's text, made from the CV, below). None of this is checked into git or
+`custom-jobs/<id>.json` (jobs added by link — see below), `fit/<id>.json` (fit scores, below), `pages/<id>.json` (portfolio page settings), `feeds/<id>.json` (job feed token, below), `digests/<id>.json` (email digest, below), `page-content/<id>.json` (the page's text, made from the CV, below) and `cv-advice/<id>.json` (suggestions for the CV, below). None of this is checked into git or
 touched by the scrape; it's entirely separate from `jobs.csv`.
+
+**CV suggestions** (on request): `cv_advice.py` (run by the server for one user at a time) gives `claude-opus-5-5` the CV and up to 15 jobs — liked, then tracked, then fit scores ≥ 60, never hidden ones, each read in full when its posting was fetched — and writes `cv-advice/<id>.json`: `{cv, model, version, jobs, jobTitles, generatedAt, advice: {summary, keep[], suggestions[{title, where, change, why, job_ids}]}}`. The prompt forbids suggesting claims the CV doesn't support. It skips the call when the CV hash, the job list, model and version are unchanged. Advice from an older CV is served as `stale` until asked again; deleting the CV deletes it.
 
 **Portfolio pages** (opt-in): a logged-in user can publish a page at `<slug>.hireme.sk`, built from their CV. `pages_cv.py` (run by the server for one user at a time, the way `scrapers.overrides` is) reads the CV with `claude-haiku-5-5` into `page-content/<id>.json`: name, headline, summary, skills, experience, education, projects, and the links the CV itself gives. Its schema has no contact fields and its prompt forbids them. Content is remade only when the CV's hash changes. A CV upload while the page is on regenerates it; deleting the CV deletes the content. Turning the page off keeps the address and content, so turning it back on needs no new run. Addresses are 3–40 letters, digits and hyphens, not reserved (`web/lib/pages.ts`), and held by one user at a time, including while their page is off. The page is HTML with inline styles only: values are escaped, and only http(s) links are kept.
 
@@ -156,6 +158,7 @@ copy from: Algolia-backed (`eighty_thousand_hours.py`), SSR-embedded JSON
 |---|---|---|
 | GET | `/api/jobs` | 200, full `jobs.csv` as JSON array of objects (all columns as strings); 500 `{error}` if the CSV can't be read |
 | GET/POST/DELETE | `/api/cv`, `/api/cv/file` | CV upload/download/delete (PDF, 10 MB max). Auth required. |
+| GET/POST | `/api/cv/advice` | GET → `{status, error, generatedAt, jobTitles, advice}`; `status` is `no-cv`, `none`, `generating`, `ready` or `stale` (made from an earlier CV); `error` explains the last failed run (or that there were no jobs to compare with). POST starts a run (400 without a CV) and returns the same. Auth required. |
 | GET/PUT | `/api/preferences` | Liked/hidden id sets, plus `visits: {last, previous}` (dates; dropped if malformed). Auth required. |
 | GET, PUT/DELETE `/:jobId` | `/api/applications` | Tracked-application status/notes/letter per job. Auth required. |
 | GET | `/api/fit` | 200 `{model, scores: {jobId: {score, reason, scored_at}}}` for this user, 404 if they aren't scored. Auth required. |

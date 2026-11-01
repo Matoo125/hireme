@@ -320,6 +320,24 @@ them. Everyone else sees no change.
   anything; `--evaluate` compares the scores with your liked and hidden jobs
   (the roadmap's bar: at least half of what you'd hide scored below 40).
 
+## CV suggestions
+
+A signed-in user with a CV can click "Suggest improvements" under it. Claude
+(`claude-opus-5-5`) reads the CV next to the jobs they're going for (the ones
+they liked or track, then their best fit scores of 60 or more, up to 15, never
+ones they hid) and suggests what to add, reword, move up or cut, which jobs each
+change helps with, and what to keep. It never suggests claiming something the CV
+doesn't show; gaps come back as questions. Nothing edits the CV: the user changes
+the PDF and uploads it again.
+
+- `cv_advice.py --user <id>` writes `data/cv-advice/<id>.json`. The server runs
+  it only on request, one run per user at a time. Asking again with the same CV
+  and the same jobs doesn't call Claude (`--force` does). About $0.10–0.25 a run.
+- After a new CV upload the old suggestions stay, marked as made for the previous
+  CV. Deleting the CV deletes them.
+- `--dry-run` lists the jobs it would use; `python3 -m unittest tests.test_cv_advice`
+  tests it with a stand-in for Claude.
+
 ## Portfolio pages
 
 A signed-in user can publish a page built from their CV at `<slug>.hireme.sk`.

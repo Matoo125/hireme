@@ -483,6 +483,44 @@ main {
   color: #c44;
 }
 
+.cv-advice {
+  margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--border);
+}
+
+.cv-advice-summary {
+  margin: 0.6rem 0 0.4rem;
+  font-size: 0.88rem;
+}
+
+.cv-advice h4 {
+  margin: 0.8rem 0 0.3rem;
+  font-size: 0.85rem;
+}
+
+.cv-advice ul,
+.cv-advice ol {
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: 0.85rem;
+}
+
+.cv-advice li {
+  margin-bottom: 0.6rem;
+}
+
+.cv-advice-where,
+.cv-advice-jobs {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.cv-advice-why {
+  margin: 0.15rem 0 0;
+  color: var(--muted);
+}
+
 /* ── Add job by link ──────────────────────────────────────────────────── */
 
 .add-job-form {

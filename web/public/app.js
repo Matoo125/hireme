@@ -119,6 +119,7 @@ async function loadCvInfo() {
     });
     if (res.status === 404) {
       cvInfo.hidden = true;
+      document.getElementById("cvAdvice").hidden = true;
       return;
     }
     if (!res.ok) throw new Error("Failed to load CV info");
@@ -126,6 +127,7 @@ async function loadCvInfo() {
     cvFilename.textContent = meta.filename;
     cvDate.textContent = `uploaded ${new Date(meta.uploadedAt).toLocaleDateString()}`;
     cvInfo.hidden = false;
+    loadAdvice();
   } catch (err) {
     cvInfo.hidden = true;
     if (err.message === "Session expired") {
@@ -202,9 +204,105 @@ async function deleteCv() {
     });
     if (!res.ok) throw new Error("Delete failed");
     document.getElementById("cvInfo").hidden = true;
+    document.getElementById("cvAdvice").hidden = true;
     loadPageInfo();
   } catch (err) {
     alert(err.message);
+  }
+}
+
+// ── CV advice ────────────────────────────────────────────────────────────────
+// Suggestions for the CV, from comparing it with the jobs the user likes,
+// tracks or fits best. Made in the background on request; the user edits the PDF.
+
+let advicePolls = 0;
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text) node.textContent = text;
+  return node;
+}
+
+function showAdvice(data) {
+  const box = document.getElementById("cvAdvice");
+  const btn = document.getElementById("cvAdviceBtn");
+  const info = document.getElementById("cvAdviceInfo");
+  const body = document.getElementById("cvAdviceBody");
+
+  box.hidden = data.status === "no-cv";
+  if (box.hidden) return;
+  const generating = data.status === "generating";
+  btn.disabled = generating;
+  btn.textContent = data.advice ? "Suggest again" : "Suggest improvements";
+
+  info.className = data.error ? "cv-status cv-status--error" : "cv-status";
+  info.textContent = data.error
+    ?? (generating ? "Reading your CV next to your jobs… this takes up to a minute or two."
+      : data.status === "stale" ? "These suggestions are for your previous CV. Ask again for your current one."
+      : data.generatedAt ? `Suggested ${new Date(data.generatedAt).toLocaleDateString()}.` : "");
+  info.hidden = !info.textContent;
+
+  body.replaceChildren();
+  body.hidden = !data.advice;
+  if (data.advice) {
+    const { summary, keep, suggestions } = data.advice;
+    body.append(el("p", "cv-advice-summary", summary));
+    if (suggestions.length) {
+      body.append(el("h4", "", "What to change"));
+      const list = el("ol");
+      for (const s of suggestions) {
+        const item = el("li");
+        const head = el("strong", "", s.title);
+        item.append(head);
+        if (s.where) item.append(" ", el("span", "cv-advice-where", `(${s.where})`));
+        item.append(el("p", "", s.change), el("p", "cv-advice-why", s.why));
+        const titles = s.job_ids.map((id) => data.jobTitles[id]).filter(Boolean);
+        if (titles.length) item.append(el("div", "cv-advice-jobs", `Helps with: ${titles.join("; ")}`));
+        list.append(item);
+      }
+      body.append(list);
+    }
+    if (keep.length) {
+      body.append(el("h4", "", "Keep"));
+      const list = el("ul");
+      for (const k of keep) list.append(el("li", "", k));
+      body.append(list);
+    }
+  }
+
+  if (generating) {
+    if (advicePolls++ < 60) setTimeout(loadAdvice, 3000);
+  } else {
+    advicePolls = 0;
+  }
+}
+
+async function loadAdvice() {
+  try {
+    const jwt = await getJwt();
+    const res = await fetch("/api/cv/advice", { headers: { Authorization: `Bearer ${jwt}` } });
+    if (!res.ok) throw new Error("Failed to load suggestions");
+    showAdvice(await res.json());
+  } catch (err) {
+    if (err.message === "Session expired") logout();
+  }
+}
+
+async function requestAdvice() {
+  try {
+    const jwt = await getJwt();
+    const res = await fetch("/api/cv/advice", { method: "POST", headers: { Authorization: `Bearer ${jwt}` } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Couldn't start");
+    advicePolls = 0;
+    showAdvice(data);
+  } catch (err) {
+    if (err.message === "Session expired") return logout();
+    const info = document.getElementById("cvAdviceInfo");
+    info.hidden = false;
+    info.textContent = err.message;
+    info.className = "cv-status cv-status--error";
   }
 }
 
@@ -434,6 +532,7 @@ document.getElementById("logoutBtn").addEventListener("click", logout);
 document.getElementById("cvUploadBtn").addEventListener("click", uploadCv);
 document.getElementById("cvDownload").addEventListener("click", downloadCv);
 document.getElementById("cvDelete").addEventListener("click", deleteCv);
+document.getElementById("cvAdviceBtn").addEventListener("click", requestAdvice);
 document.getElementById("cvFile").addEventListener("change", (e) => {
   document.getElementById("cvUploadBtn").disabled = !e.target.files.length;
 });

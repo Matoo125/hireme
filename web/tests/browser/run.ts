@@ -70,6 +70,20 @@ const FIT_SCORES = Object.fromEntries(fixtureIds.map((id: string, i: number) => 
 ]));
 await Bun.write(path.join(fitDir, "7.json"), JSON.stringify({ cv: "x", model: "test", scores: FIT_SCORES }));
 
+// CV advice for the plain user, as cv_advice.py would write it for a CV whose
+// bytes are "%PDF-1.4 test cv"; cv-advice.js uploads that CV and checks it shows.
+await Bun.write(path.join(dir, "data", "cv-advice", "7.json"), JSON.stringify({
+  cv: new Bun.CryptoHasher("sha256").update("%PDF-1.4 test cv").digest("hex"),
+  model: "test", version: 1, jobs: [fixtureIds[0]], generatedAt: "2026-11-01T10:00:00Z",
+  jobTitles: { [fixtureIds[0]]: "First job – First org" },
+  advice: {
+    summary: "Strong on research.",
+    keep: ["Clear publication list"],
+    suggestions: [{ title: "Lead with policy work", where: "Summary", change: "Move it first.",
+      why: "These are policy roles.", job_ids: [fixtureIds[0]] }],
+  },
+}));
+
 async function resetData() {
   await Bun.write(files.overrides, "# Browser tests.\n");
   const proc = Bun.spawn(

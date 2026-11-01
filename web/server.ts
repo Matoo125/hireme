@@ -180,6 +180,60 @@ async function readCvMeta(userId: number): Promise<CvMeta | null> {
   return file.json();
 }
 
+// ── CV advice ────────────────────────────────────────────────────────────────
+
+// cv_advice.py compares the CV with the jobs the user likes, tracks or fits
+// best, and suggests changes. It runs only when the user asks, one run per user
+// at a time; the last failure is kept in memory to show instead of a spinner.
+const ADVICE_DIR = path.join(DATA_DIR, "cv-advice");
+const adviceJobs = new Set<number>();
+const adviceErrors = new Map<number, string>();
+
+function startAdvice(userId: number): void {
+  if (adviceJobs.has(userId)) return;
+  adviceJobs.add(userId);
+  adviceErrors.delete(userId);
+  try {
+    const proc = Bun.spawn(
+      ["python3", "cv_advice.py", "--user", String(userId), "--jobs", CSV_PATH, "--data-dir", DATA_DIR],
+      { cwd: REPO_DIR, stdout: "pipe", stderr: "pipe" }
+    );
+    Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited])
+      .then(([stdout, stderr, code]) => {
+        if (code !== 0) {
+          console.error(`CV advice for user ${userId} failed: ${stderr.trim()}`);
+          adviceErrors.set(userId, "Making suggestions failed. Try again in a few minutes.");
+        } else if (stdout.includes("no liked, tracked or well-fitting jobs")) {
+          adviceErrors.set(userId, "Like or track a few jobs first, so there's something to compare your CV with.");
+        }
+      })
+      .finally(() => adviceJobs.delete(userId));
+  } catch (exc) {
+    console.error(`CV advice for user ${userId} could not start: ${exc}`);
+    adviceErrors.set(userId, "Making suggestions failed. Try again in a few minutes.");
+    adviceJobs.delete(userId);
+  }
+}
+
+async function adviceStatus(userId: number) {
+  const pdf = Bun.file(cvPdfPath(userId));
+  const file = Bun.file(path.join(ADVICE_DIR, `${userId}.json`));
+  const saved = (await file.exists()) ? await file.json() : null;
+  let status: "no-cv" | "generating" | "none" | "ready" | "stale";
+  if (!(await pdf.exists())) status = "no-cv";
+  else if (adviceJobs.has(userId)) status = "generating";
+  else if (!saved) status = "none";
+  // "stale": made from an earlier CV, still shown until the user asks again.
+  else status = saved.cv === cvHash(new Uint8Array(await pdf.arrayBuffer())) ? "ready" : "stale";
+  return {
+    status,
+    error: adviceErrors.get(userId) ?? null,
+    generatedAt: saved?.generatedAt ?? null,
+    jobTitles: saved?.jobTitles ?? {},
+    advice: status === "no-cv" ? null : (saved?.advice ?? null),
+  };
+}
+
 // ── Portfolio page helpers ───────────────────────────────────────────────────
 
 // pages_cv.py makes one user's content at a time. A CV uploaded while a run is
@@ -667,9 +721,31 @@ Bun.serve({
         try { await unlink(cvMetaPath(user.id)); } catch {}
         // The page was made from this CV; take its content down with it.
         await removeContent(DATA_DIR, user.id);
+        // So was the advice, which quotes it.
+        try { await unlink(path.join(ADVICE_DIR, `${user.id}.json`)); } catch {}
         return Response.json({ ok: true });
       }
 
+      return new Response("Method not allowed", { status: 405 });
+    }
+
+    // GET /api/cv/advice → {status, error, generatedAt, jobTitles, advice}
+    // POST /api/cv/advice → start making suggestions; returns the same, "generating"
+    if (url.pathname === "/api/cv/advice") {
+      let user: { id: number; username: string | null };
+      try {
+        user = await verifyToken(req.headers.get("authorization"));
+      } catch {
+        return Response.json({ error: "unauthorized" }, { status: 401 });
+      }
+      if (req.method === "GET") return Response.json(await adviceStatus(user.id));
+      if (req.method === "POST") {
+        if (!(await Bun.file(cvPdfPath(user.id)).exists())) {
+          return Response.json({ error: "Upload a CV first" }, { status: 400 });
+        }
+        startAdvice(user.id);
+        return Response.json(await adviceStatus(user.id));
+      }
       return new Response("Method not allowed", { status: 405 });
     }
 
