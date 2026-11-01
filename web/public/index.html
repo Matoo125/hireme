@@ -65,6 +65,16 @@
       </div>
     </div>
 
+    <div id="digestSection" class="cv-section" hidden>
+      <form id="digestForm" class="add-job-form">
+        <label for="digestEmail">Email me new jobs that fit my CV:</label>
+        <input id="digestEmail" type="email" placeholder="you@example.com" autocomplete="email" required />
+        <button type="submit" class="auth-btn auth-btn--small">Email me</button>
+        <button id="digestStop" type="button" class="cv-action cv-action--danger" hidden>Stop emails</button>
+      </form>
+      <p id="digestInfo" class="cv-status" hidden></p>
+    </div>
+
     <div id="addJobSection" class="cv-section" hidden>
       <form id="addJobForm" class="add-job-form">
         <input id="addJobLink" type="url" placeholder="Paste a job link…" required />
