@@ -77,6 +77,7 @@ function updateAuthUI() {
   const cvSection = document.getElementById("cvSection");
   const pageSection = document.getElementById("pageSection");
   const addJobSection = document.getElementById("addJobSection");
+  const feedSection = document.getElementById("feedSection");
 
   if (isLoggedIn()) {
     loginBtn.hidden = true;
@@ -84,14 +85,17 @@ function updateAuthUI() {
     userName.textContent = getUser() || "User";
     cvSection.hidden = false;
     pageSection.hidden = false;
+    feedSection.hidden = false;
     addJobSection.hidden = false;
     loadCvInfo();
     loadPageInfo();
+    loadFeedInfo();
   } else {
     loginBtn.hidden = false;
     userInfo.hidden = true;
     cvSection.hidden = true;
     pageSection.hidden = true;
+    feedSection.hidden = true;
     addJobSection.hidden = true;
   }
 }
@@ -285,6 +289,71 @@ async function savePage(e) {
   }
 }
 
+// ── Job feed ─────────────────────────────────────────────────────────────────
+// A private RSS link of new jobs that fit the CV; the link itself is the secret.
+
+function showFeed(feed) {
+  const feedInfo = document.getElementById("feedInfo");
+  document.getElementById("feedEnabled").checked = feed.enabled;
+  document.getElementById("feedLinkRow").hidden = !feed.enabled;
+  document.getElementById("feedUrl").value = feed.url ?? "";
+  feedInfo.className = "cv-status";
+  feedInfo.hidden = false;
+  if (!feed.enabled) {
+    feedInfo.textContent = "Off. Turn it on for a private link to add to your feed reader.";
+  } else if (!feed.scored) {
+    feedInfo.textContent = "Your account has no fit scores yet, so the feed stays empty until it does.";
+  } else {
+    feedInfo.textContent = `New jobs from the last 30 days with fit ${feed.minFit} or more, open to Europe. Keep the link private: anyone with it can read the feed.`;
+  }
+}
+
+function showFeedError(message) {
+  const feedInfo = document.getElementById("feedInfo");
+  feedInfo.hidden = false;
+  feedInfo.textContent = message;
+  feedInfo.className = "cv-status cv-status--error";
+}
+
+async function loadFeedInfo() {
+  try {
+    const jwt = await getJwt();
+    const res = await fetch("/api/feed", { headers: { Authorization: `Bearer ${jwt}` } });
+    if (!res.ok) throw new Error("Failed to load your feed");
+    showFeed(await res.json());
+  } catch (err) {
+    if (err.message === "Session expired") logout();
+  }
+}
+
+async function saveFeed(body) {
+  try {
+    const jwt = await getJwt();
+    const res = await fetch("/api/feed", {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Save failed");
+    showFeed(data);
+  } catch (err) {
+    await loadFeedInfo();
+    showFeedError(err.message);
+  }
+}
+
+async function copyFeedUrl() {
+  const input = document.getElementById("feedUrl");
+  try {
+    await navigator.clipboard.writeText(input.value);
+    document.getElementById("feedCopy").textContent = "Copied";
+    setTimeout(() => (document.getElementById("feedCopy").textContent = "Copy link"), 1500);
+  } catch {
+    input.select();
+  }
+}
+
 // Auth event listeners
 handleAuthCallback();
 document.getElementById("loginBtn").addEventListener("click", login);
@@ -297,6 +366,11 @@ document.getElementById("cvFile").addEventListener("change", (e) => {
 });
 document.getElementById("pageEnabled").addEventListener("change", savePage);
 document.getElementById("pageForm").addEventListener("submit", savePage);
+document.getElementById("feedEnabled").addEventListener("change", (e) => saveFeed({ enabled: e.target.checked }));
+document.getElementById("feedCopy").addEventListener("click", copyFeedUrl);
+document.getElementById("feedRotate").addEventListener("click", () => {
+  if (confirm("Make a new link? The current one stops working.")) saveFeed({ enabled: true, rotate: true });
+});
 
 // ── Job board ────────────────────────────────────────────────────────────────
 

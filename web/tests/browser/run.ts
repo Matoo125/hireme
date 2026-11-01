@@ -110,6 +110,8 @@ const server = Bun.spawn(["bun", "run", "server.ts"], {
     OVERRIDES_COMMIT: "0",
     AUTH_ISSUER: issuer,
     FIT_DIR: fitDir,
+    // Per-user files (feeds, preferences, CVs) stay out of the repo's data/.
+    DATA_DIR: path.join(dir, "data"),
   },
   stdout: "ignore",
   stderr: "inherit",

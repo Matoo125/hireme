@@ -11,6 +11,10 @@ import {
   cvHash, findPage, readContent, readSettings, removeContent, renderNotFound, renderPage,
   slugFromHost, slugOwner, slugProblem, writeSettings, type PageSettings,
 } from "./lib/pages";
+import {
+  DEFAULT_MIN_FIT, feedItems, findFeed, newToken, readFeed, removeFeed, renderFeed, writeFeed,
+  type FeedSettings,
+} from "./lib/feed";
 
 const PORT = Number(process.env.PORT ?? 4020);
 const ROOT = import.meta.dir;
@@ -25,6 +29,9 @@ const CUSTOM_JOBS_DIR = path.join(DATA_DIR, "custom-jobs");
 const FIT_DIR = process.env.FIT_DIR ?? path.join(DATA_DIR, "fit");
 // Portfolio pages are served at <slug>.<PAGES_DOMAIN> (lib/pages.ts).
 const PAGES_DOMAIN = (process.env.PAGES_DOMAIN ?? "hireme.sk").toLowerCase();
+
+// Where links in feeds point back to (the job board itself).
+const SITE_URL = (process.env.SITE_URL ?? `https://${PAGES_DOMAIN}`).replace(/\/$/, "");
 
 const MAX_CV_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -224,6 +231,39 @@ const PAGE_HEADERS = {
   "X-Content-Type-Options": "nosniff",
   "Cache-Control": "public, max-age=300",
 };
+
+// ── Job feeds ────────────────────────────────────────────────────────────────
+
+async function readFitScores(userId: number): Promise<Record<string, { score: number; reason: string }> | null> {
+  const file = Bun.file(path.join(FIT_DIR, `${userId}.json`));
+  return (await file.exists()) ? (await file.json()).scores : null;
+}
+
+async function feedStatus(userId: number, feed: FeedSettings | null) {
+  return {
+    enabled: feed !== null,
+    url: feed ? `${SITE_URL}/feed/${feed.token}.xml` : null,
+    minFit: feed?.minFit ?? DEFAULT_MIN_FIT,
+    scored: (await readFitScores(userId)) !== null,
+  };
+}
+
+async function serveFeed(token: string): Promise<Response> {
+  const found = await findFeed(DATA_DIR, token);
+  if (!found) return new Response("No such feed", { status: 404 });
+  const { rows } = await loadJobs();
+  const scores = (await readFitScores(found.userId)) ?? {};
+  const today = new Date().toISOString().slice(0, 10);
+  const items = feedItems(rows, scores, found.feed.minFit, today);
+  return new Response(renderFeed(items, SITE_URL, found.feed.minFit), {
+    headers: {
+      "Content-Type": "application/rss+xml; charset=utf-8",
+      "Cache-Control": "private, max-age=300",
+      "X-Robots-Tag": "noindex",
+      "Referrer-Policy": "no-referrer",
+    },
+  });
+}
 
 async function servePage(slug: string, req: Request): Promise<Response> {
   const page = new URL(req.url).pathname === "/" ? await findPage(DATA_DIR, slug) : null;
@@ -818,6 +858,49 @@ Bun.serve({
         return Response.json(await pageStatus(user.id, settings));
       }
 
+      return new Response("Method not allowed", { status: 405 });
+    }
+
+    // ── Job feed: private RSS of new, well-fitting jobs ────────────────────
+    // GET /feed/<token>.xml needs no login: the token is the secret.
+    const feedToken = url.pathname.match(/^\/feed\/([^/]+)\.xml$/)?.[1];
+    if (feedToken !== undefined) {
+      if (req.method !== "GET" && req.method !== "HEAD") return new Response("Method not allowed", { status: 405 });
+      try {
+        return await serveFeed(feedToken);
+      } catch (err) {
+        console.error(`Feed failed: ${err}`);
+        return new Response("Feed unavailable", { status: 500 });
+      }
+    }
+
+    // GET → {enabled, url, minFit, scored}; PUT {enabled, rotate?} turns the
+    // feed on or off, or (rotate) replaces its link so the old one stops working.
+    if (url.pathname === "/api/feed") {
+      let user: { id: number; username: string | null };
+      try {
+        user = await verifyToken(req.headers.get("authorization"));
+      } catch {
+        return Response.json({ error: "unauthorized" }, { status: 401 });
+      }
+      if (req.method === "GET") return Response.json(await feedStatus(user.id, await readFeed(DATA_DIR, user.id)));
+      if (req.method === "PUT") {
+        const body = await req.json().catch(() => null);
+        if (typeof body?.enabled !== "boolean") {
+          return Response.json({ error: "enabled must be true or false" }, { status: 400 });
+        }
+        if (!body.enabled) {
+          await removeFeed(DATA_DIR, user.id);
+          return Response.json(await feedStatus(user.id, null));
+        }
+        const current = await readFeed(DATA_DIR, user.id);
+        const feed: FeedSettings =
+          current && body.rotate !== true
+            ? current
+            : { token: newToken(), minFit: current?.minFit ?? DEFAULT_MIN_FIT, createdAt: new Date().toISOString() };
+        if (feed !== current) await writeFeed(DATA_DIR, user.id, feed);
+        return Response.json(await feedStatus(user.id, feed));
+      }
       return new Response("Method not allowed", { status: 405 });
     }
 

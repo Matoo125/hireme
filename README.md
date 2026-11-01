@@ -340,6 +340,19 @@ would be remade, and `python3 -m unittest tests.test_pages_cv` tests the
 extraction with a stand-in for Claude. Setup needs a wildcard DNS record and
 certificate (see `SPEC.md` §6).
 
+## Job feed (RSS)
+
+A signed-in user can turn on a private RSS link of new jobs that fit their CV
+and add it to any feed reader. It lists jobs first seen in the last 30 days
+that scored 60 or more (`data/fit/<id>.json`, so only users in `FIT_USER_IDS`
+get items), leaving out jobs not open to Europe; at most 50, newest first.
+
+- The link is `https://hireme.sk/feed/<token>.xml` and needs no login: the
+  32-character token in `data/feeds/<id>.json` is the secret.
+- "New link" replaces the token, and turning the feed off deletes it, so the
+  old link returns 404 either way.
+- `SITE_URL` (default `https://$PAGES_DOMAIN`) sets the address links point to.
+
 ## Hand corrections
 
 When a board gets a job wrong (a stale close date, a salary in the wrong
