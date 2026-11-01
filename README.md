@@ -353,6 +353,26 @@ get items), leaving out jobs not open to Europe; at most 50, newest first.
   old link returns 404 either way.
 - `SITE_URL` (default `https://$PAGES_DOMAIN`) sets the address links point to.
 
+## Email digest
+
+A signed-in user can get the same jobs by email: one email after each daily
+scrape that found new ones for them (fit 60 or more, open to Europe, first
+seen since they confirmed, never the same job twice). Nothing else is sent.
+
+- They enter an address (the login token has none) and confirm it from an
+  emailed link. Confirmation emails are limited to one a minute and five a day.
+- The confirm and unsubscribe links open a page with a button that POSTs, so
+  mail scanners following links don't act for anyone. Each digest has a
+  one-click `List-Unsubscribe` header too.
+- `scrape_and_sync.sh` runs `web/digest.ts` after fit scoring when
+  `RESEND_API_KEY` is set (environment or `.env`); `bun run digest.ts
+  --dry-run` (in `web/`) says who would get what without sending.
+
+Setup: verify `hireme.sk` as a sending domain in Resend, then set
+`RESEND_API_KEY` in the repo's `.env` (for the timer) and in the web server's
+environment (for confirmation emails). `DIGEST_FROM` overrides the sender
+(default `Hireme <jobs@hireme.sk>`). Settings are in `data/digests/<id>.json`.
+
 ## Hand corrections
 
 When a board gets a job wrong (a stale close date, a salary in the wrong

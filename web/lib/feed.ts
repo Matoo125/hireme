@@ -113,7 +113,7 @@ function escapeXml(text: string): string {
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "");
 }
 
-function httpLink(link: string | undefined): string | null {
+export function httpLink(link: string | undefined): string | null {
   try {
     const url = new URL(link ?? "");
     return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
