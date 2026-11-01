@@ -11,6 +11,14 @@ import {
   cvHash, findPage, readContent, readSettings, removeContent, renderNotFound, renderPage,
   slugFromHost, slugOwner, slugProblem, writeSettings, type PageSettings,
 } from "./lib/pages";
+import {
+  DEFAULT_MIN_FIT, feedItems, findFeed, newToken, readFeed, removeFeed, renderFeed, writeFeed,
+  type FeedSettings,
+} from "./lib/feed";
+import {
+  confirmEmail, confirmLimit, emailProblem, findDigest, LINK_PAGE_HEADERS, linkPage, newDigest,
+  readDigest, recordConfirmSend, removeDigest, sendEmail, writeDigest, type DigestSettings,
+} from "./lib/digest";
 
 const PORT = Number(process.env.PORT ?? 4020);
 const ROOT = import.meta.dir;
@@ -25,6 +33,13 @@ const CUSTOM_JOBS_DIR = path.join(DATA_DIR, "custom-jobs");
 const FIT_DIR = process.env.FIT_DIR ?? path.join(DATA_DIR, "fit");
 // Portfolio pages are served at <slug>.<PAGES_DOMAIN> (lib/pages.ts).
 const PAGES_DOMAIN = (process.env.PAGES_DOMAIN ?? "hireme.sk").toLowerCase();
+
+// Where links in feeds point back to (the job board itself).
+const SITE_URL = (process.env.SITE_URL ?? `https://${PAGES_DOMAIN}`).replace(/\/$/, "");
+
+// Email digests go out through Resend; without a key the option says it's unavailable.
+const RESEND_API_KEY = process.env.RESEND_API_KEY ?? "";
+const DIGEST_FROM = process.env.DIGEST_FROM ?? "Hireme <jobs@hireme.sk>";
 
 const MAX_CV_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -224,6 +239,91 @@ const PAGE_HEADERS = {
   "X-Content-Type-Options": "nosniff",
   "Cache-Control": "public, max-age=300",
 };
+
+// ── Job feeds ────────────────────────────────────────────────────────────────
+
+async function readFitScores(userId: number): Promise<Record<string, { score: number; reason: string }> | null> {
+  const file = Bun.file(path.join(FIT_DIR, `${userId}.json`));
+  return (await file.exists()) ? (await file.json()).scores : null;
+}
+
+async function feedStatus(userId: number, feed: FeedSettings | null) {
+  return {
+    enabled: feed !== null,
+    url: feed ? `${SITE_URL}/feed/${feed.token}.xml` : null,
+    minFit: feed?.minFit ?? DEFAULT_MIN_FIT,
+    scored: (await readFitScores(userId)) !== null,
+  };
+}
+
+async function serveFeed(token: string): Promise<Response> {
+  const found = await findFeed(DATA_DIR, token);
+  if (!found) return new Response("No such feed", { status: 404 });
+  const { rows } = await loadJobs();
+  const scores = (await readFitScores(found.userId)) ?? {};
+  const today = new Date().toISOString().slice(0, 10);
+  const items = feedItems(rows, scores, found.feed.minFit, today);
+  return new Response(renderFeed(items, SITE_URL, found.feed.minFit), {
+    headers: {
+      "Content-Type": "application/rss+xml; charset=utf-8",
+      "Cache-Control": "private, max-age=300",
+      "X-Robots-Tag": "noindex",
+      "Referrer-Policy": "no-referrer",
+    },
+  });
+}
+
+// ── Email digests ────────────────────────────────────────────────────────────
+
+async function digestStatus(userId: number, digest: DigestSettings | null) {
+  return {
+    email: digest?.email ?? "",
+    status: !digest ? "off" : digest.confirmed ? "on" : "pending",
+    minFit: digest?.minFit ?? DEFAULT_MIN_FIT,
+    scored: (await readFitScores(userId)) !== null,
+    available: RESEND_API_KEY !== "",
+  };
+}
+
+/** Email the confirmation link, if the limits allow; returns the digest to save. */
+async function sendConfirmation(digest: DigestSettings): Promise<DigestSettings> {
+  const now = Date.now();
+  const problem = confirmLimit(digest, now);
+  if (problem) throw new Error(problem);
+  const url = `${SITE_URL}/digest/confirm/${digest.confirmToken}`;
+  await sendEmail(confirmEmail(digest.email, url, SITE_URL), { apiKey: RESEND_API_KEY, from: DIGEST_FROM, url: process.env.RESEND_API_URL });
+  return recordConfirmSend(digest, now);
+}
+
+/** /digest/confirm/<token> and /digest/unsubscribe/<token>: a button on GET, the change on POST. */
+async function serveDigestLink(kind: "confirm" | "unsubscribe", token: string, req: Request): Promise<Response> {
+  const page = (message: string, status = 200, button?: { action: string; label: string }) =>
+    new Response(linkPage(message, SITE_URL, button), { status, headers: LINK_PAGE_HEADERS });
+  const found = await findDigest(DATA_DIR, kind === "confirm" ? "confirmToken" : "unsubscribeToken", token);
+  const action = `/digest/${kind}/${token}`;
+
+  if (kind === "confirm") {
+    if (!found) return page("This link has expired. Turn the digest on again from Hireme to get a new one.", 404);
+    if (req.method === "POST") {
+      if (!found.digest.confirmed) {
+        await writeDigest(DATA_DIR, found.userId, {
+          ...found.digest, confirmed: true, confirmedAt: new Date().toISOString(),
+        });
+      }
+      return page(`Confirmed. ${found.digest.email} will get an email when new jobs fit your CV.`);
+    }
+    if (found.digest.confirmed) return page(`${found.digest.email} is already confirmed.`);
+    return page(`Send new jobs that fit your CV to ${found.digest.email}?`, 200, { action, label: "Confirm" });
+  }
+
+  // Unsubscribe. A one-click POST from a mail client gets a bare 200.
+  if (req.method === "POST") {
+    if (found) await removeDigest(DATA_DIR, found.userId);
+    return page("Unsubscribed. No more digests will be sent.");
+  }
+  if (!found) return page("You're not subscribed: no digests will be sent.");
+  return page(`Stop sending job digests to ${found.digest.email}?`, 200, { action, label: "Unsubscribe" });
+}
 
 async function servePage(slug: string, req: Request): Promise<Response> {
   const page = new URL(req.url).pathname === "/" ? await findPage(DATA_DIR, slug) : null;
@@ -818,6 +918,99 @@ Bun.serve({
         return Response.json(await pageStatus(user.id, settings));
       }
 
+      return new Response("Method not allowed", { status: 405 });
+    }
+
+    // ── Job feed: private RSS of new, well-fitting jobs ────────────────────
+    // GET /feed/<token>.xml needs no login: the token is the secret.
+    const feedToken = url.pathname.match(/^\/feed\/([^/]+)\.xml$/)?.[1];
+    if (feedToken !== undefined) {
+      if (req.method !== "GET" && req.method !== "HEAD") return new Response("Method not allowed", { status: 405 });
+      try {
+        return await serveFeed(feedToken);
+      } catch (err) {
+        console.error(`Feed failed: ${err}`);
+        return new Response("Feed unavailable", { status: 500 });
+      }
+    }
+
+    // ── Email digest links (no login: the token is the secret) ─────────────
+    const digestLink = url.pathname.match(/^\/digest\/(confirm|unsubscribe)\/([^/]+)$/);
+    if (digestLink) {
+      if (req.method !== "GET" && req.method !== "POST") return new Response("Method not allowed", { status: 405 });
+      return serveDigestLink(digestLink[1] as "confirm" | "unsubscribe", digestLink[2], req);
+    }
+
+    // GET → {email, status: off|pending|on, minFit, scored, available}.
+    // PUT {email}: a new address (or the same one, unconfirmed) gets a
+    // confirmation email; nothing else is sent until it's confirmed.
+    // DELETE: stop the digest.
+    if (url.pathname === "/api/digest") {
+      let user: { id: number; username: string | null };
+      try {
+        user = await verifyToken(req.headers.get("authorization"));
+      } catch {
+        return Response.json({ error: "unauthorized" }, { status: 401 });
+      }
+      const current = await readDigest(DATA_DIR, user.id);
+      if (req.method === "GET") return Response.json(await digestStatus(user.id, current));
+      if (req.method === "DELETE") {
+        await removeDigest(DATA_DIR, user.id);
+        return Response.json(await digestStatus(user.id, null));
+      }
+      if (req.method === "PUT") {
+        if (!RESEND_API_KEY) return Response.json({ error: "Email digests aren't set up on this server" }, { status: 503 });
+        const body = await req.json().catch(() => null);
+        const email = typeof body?.email === "string" ? body.email.trim() : "";
+        const problem = emailProblem(email);
+        if (problem) return Response.json({ error: problem }, { status: 400 });
+        const sameAddress = current?.email.toLowerCase() === email.toLowerCase();
+        if (sameAddress && current?.confirmed) return Response.json(await digestStatus(user.id, current));
+        let digest = sameAddress && current ? current : newDigest(email, current?.minFit ?? DEFAULT_MIN_FIT, current, new Date());
+        try {
+          digest = await sendConfirmation(digest);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          const limited = message.startsWith("Too many") || message.startsWith("Wait");
+          if (!limited) console.error(`Confirmation email failed: ${message}`);
+          return Response.json(
+            { error: limited ? message : "Could not send the confirmation email; try again later" },
+            { status: limited ? 429 : 502 }
+          );
+        }
+        await writeDigest(DATA_DIR, user.id, digest);
+        return Response.json(await digestStatus(user.id, digest));
+      }
+      return new Response("Method not allowed", { status: 405 });
+    }
+
+    // GET → {enabled, url, minFit, scored}; PUT {enabled, rotate?} turns the
+    // feed on or off, or (rotate) replaces its link so the old one stops working.
+    if (url.pathname === "/api/feed") {
+      let user: { id: number; username: string | null };
+      try {
+        user = await verifyToken(req.headers.get("authorization"));
+      } catch {
+        return Response.json({ error: "unauthorized" }, { status: 401 });
+      }
+      if (req.method === "GET") return Response.json(await feedStatus(user.id, await readFeed(DATA_DIR, user.id)));
+      if (req.method === "PUT") {
+        const body = await req.json().catch(() => null);
+        if (typeof body?.enabled !== "boolean") {
+          return Response.json({ error: "enabled must be true or false" }, { status: 400 });
+        }
+        if (!body.enabled) {
+          await removeFeed(DATA_DIR, user.id);
+          return Response.json(await feedStatus(user.id, null));
+        }
+        const current = await readFeed(DATA_DIR, user.id);
+        const feed: FeedSettings =
+          current && body.rotate !== true
+            ? current
+            : { token: newToken(), minFit: current?.minFit ?? DEFAULT_MIN_FIT, createdAt: new Date().toISOString() };
+        if (feed !== current) await writeFeed(DATA_DIR, user.id, feed);
+        return Response.json(await feedStatus(user.id, feed));
+      }
       return new Response("Method not allowed", { status: 405 });
     }
 

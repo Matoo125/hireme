@@ -52,6 +52,29 @@
       <p id="pageInfo" class="cv-status" hidden></p>
     </div>
 
+    <div id="feedSection" class="cv-section" hidden>
+      <label class="cv-page-toggle">
+        <input id="feedEnabled" type="checkbox" />
+        Get new jobs that fit my CV in a feed reader (RSS)
+      </label>
+      <p id="feedInfo" class="cv-status" hidden></p>
+      <div id="feedLinkRow" class="add-job-form" hidden>
+        <input id="feedUrl" type="text" readonly />
+        <button id="feedCopy" type="button" class="auth-btn auth-btn--small">Copy link</button>
+        <button id="feedRotate" type="button" class="cv-action">New link</button>
+      </div>
+    </div>
+
+    <div id="digestSection" class="cv-section" hidden>
+      <form id="digestForm" class="add-job-form">
+        <label for="digestEmail">Email me new jobs that fit my CV:</label>
+        <input id="digestEmail" type="email" placeholder="you@example.com" autocomplete="email" required />
+        <button type="submit" class="auth-btn auth-btn--small">Email me</button>
+        <button id="digestStop" type="button" class="cv-action cv-action--danger" hidden>Stop emails</button>
+      </form>
+      <p id="digestInfo" class="cv-status" hidden></p>
+    </div>
+
     <div id="addJobSection" class="cv-section" hidden>
       <form id="addJobForm" class="add-job-form">
         <input id="addJobLink" type="url" placeholder="Paste a job link…" required />

@@ -12,6 +12,7 @@
 //   signIn("admin" | "user")  log in as that account (and load the admin flag)
 //   TOKENS                    { admin, user } JWTs, for direct API calls
 //   FIT_SCORES                the plain user's fit scores the server serves
+//   RESEND_SENT               URL listing the emails the server sent (via a stand-in for Resend)
 //   cx(name)                  the grid's column index for a column name
 //   rowOf(id)                 the grid's row index for a job id (-1 if not shown)
 //   openFilter(name)          open a column's filter; returns its jSuites dropdown
@@ -92,6 +93,20 @@ const sign = (sub: string) =>
     .sign(privateKey);
 const TOKENS = { admin: await sign("2"), user: await sign("7") };
 
+// A stand-in for Resend: keeps what the server sends; tests read it from
+// RESEND_SENT (GET, any origin).
+const sentEmails: unknown[] = [];
+const resend = Bun.serve({
+  port: 0, hostname: "127.0.0.1",
+  async fetch(req) {
+    if (req.method === "POST") {
+      sentEmails.push(await req.json());
+      return Response.json({ id: "test" });
+    }
+    return Response.json(sentEmails, { headers: { "Access-Control-Allow-Origin": "*" } });
+  },
+});
+
 // ── Server ───────────────────────────────────────────────────────────────────
 
 await resetData();
@@ -110,6 +125,11 @@ const server = Bun.spawn(["bun", "run", "server.ts"], {
     OVERRIDES_COMMIT: "0",
     AUTH_ISSUER: issuer,
     FIT_DIR: fitDir,
+    // Per-user files (feeds, preferences, CVs) stay out of the repo's data/.
+    DATA_DIR: path.join(dir, "data"),
+    RESEND_API_KEY: "re_test",
+    RESEND_API_URL: `http://127.0.0.1:${resend.port}/emails`,
+    SITE_URL: base,
   },
   stdout: "ignore",
   stderr: "inherit",
@@ -129,6 +149,7 @@ async function cleanup() {
   browser.kill();
   server.kill();
   auth.stop(true);
+  resend.stop(true);
   await rm(dir, { recursive: true, force: true });
 }
 
@@ -183,6 +204,7 @@ try {
     const check = (name, ok, detail = "") => out.push([Boolean(ok), name, String(detail ?? "")]);
     const TOKENS = ${JSON.stringify(TOKENS)};
     const FIT_SCORES = ${JSON.stringify(FIT_SCORES)};
+    const RESEND_SENT = "http://127.0.0.1:${resend.port}/sent";
     const cx = (name) => grid.options.columns.findIndex((c) => c.name === name);
     const rowOf = (id) => {
       for (let y = 0; y < grid.options.data.length; y++) if (grid.getValueFromCoords(0, y) === id) return y;

@@ -77,6 +77,8 @@ function updateAuthUI() {
   const cvSection = document.getElementById("cvSection");
   const pageSection = document.getElementById("pageSection");
   const addJobSection = document.getElementById("addJobSection");
+  const feedSection = document.getElementById("feedSection");
+  const digestSection = document.getElementById("digestSection");
 
   if (isLoggedIn()) {
     loginBtn.hidden = true;
@@ -84,14 +86,20 @@ function updateAuthUI() {
     userName.textContent = getUser() || "User";
     cvSection.hidden = false;
     pageSection.hidden = false;
+    feedSection.hidden = false;
+    digestSection.hidden = false;
     addJobSection.hidden = false;
     loadCvInfo();
     loadPageInfo();
+    loadFeedInfo();
+    loadDigestInfo();
   } else {
     loginBtn.hidden = false;
     userInfo.hidden = true;
     cvSection.hidden = true;
     pageSection.hidden = true;
+    feedSection.hidden = true;
+    digestSection.hidden = true;
     addJobSection.hidden = true;
   }
 }
@@ -285,6 +293,140 @@ async function savePage(e) {
   }
 }
 
+// ── Job feed ─────────────────────────────────────────────────────────────────
+// A private RSS link of new jobs that fit the CV; the link itself is the secret.
+
+function showFeed(feed) {
+  const feedInfo = document.getElementById("feedInfo");
+  document.getElementById("feedEnabled").checked = feed.enabled;
+  document.getElementById("feedLinkRow").hidden = !feed.enabled;
+  document.getElementById("feedUrl").value = feed.url ?? "";
+  feedInfo.className = "cv-status";
+  feedInfo.hidden = false;
+  if (!feed.enabled) {
+    feedInfo.textContent = "Off. Turn it on for a private link to add to your feed reader.";
+  } else if (!feed.scored) {
+    feedInfo.textContent = "Your account has no fit scores yet, so the feed stays empty until it does.";
+  } else {
+    feedInfo.textContent = `New jobs from the last 30 days with fit ${feed.minFit} or more, open to Europe. Keep the link private: anyone with it can read the feed.`;
+  }
+}
+
+function showFeedError(message) {
+  const feedInfo = document.getElementById("feedInfo");
+  feedInfo.hidden = false;
+  feedInfo.textContent = message;
+  feedInfo.className = "cv-status cv-status--error";
+}
+
+async function loadFeedInfo() {
+  try {
+    const jwt = await getJwt();
+    const res = await fetch("/api/feed", { headers: { Authorization: `Bearer ${jwt}` } });
+    if (!res.ok) throw new Error("Failed to load your feed");
+    showFeed(await res.json());
+  } catch (err) {
+    if (err.message === "Session expired") logout();
+  }
+}
+
+async function saveFeed(body) {
+  try {
+    const jwt = await getJwt();
+    const res = await fetch("/api/feed", {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Save failed");
+    showFeed(data);
+  } catch (err) {
+    await loadFeedInfo();
+    showFeedError(err.message);
+  }
+}
+
+async function copyFeedUrl() {
+  const input = document.getElementById("feedUrl");
+  try {
+    await navigator.clipboard.writeText(input.value);
+    document.getElementById("feedCopy").textContent = "Copied";
+    setTimeout(() => (document.getElementById("feedCopy").textContent = "Copy link"), 1500);
+  } catch {
+    input.select();
+  }
+}
+
+// ── Email digest ─────────────────────────────────────────────────────────────
+// One email after each daily scrape that found new jobs fitting the CV, to an
+// address confirmed from an emailed link.
+
+function showDigest(digest) {
+  const input = document.getElementById("digestEmail");
+  const info = document.getElementById("digestInfo");
+  if (!input.matches(":focus")) input.value = digest.email;
+  document.getElementById("digestStop").hidden = digest.status === "off";
+  info.className = "cv-status";
+  info.hidden = false;
+  if (!digest.available) {
+    info.textContent = "Email digests aren't set up on this server yet.";
+    document.getElementById("digestForm").querySelector("button[type=submit]").disabled = true;
+  } else if (digest.status === "pending") {
+    info.textContent = `Check ${digest.email} for a confirmation link. Nothing is sent until you confirm.`;
+  } else if (digest.status === "on") {
+    info.textContent = digest.scored
+      ? `On: an email after each daily update that finds new jobs with fit ${digest.minFit} or more, open to Europe.`
+      : "On, but your account has no fit scores yet, so nothing is sent until it does.";
+  } else {
+    info.textContent = "Off.";
+  }
+}
+
+function showDigestError(message) {
+  const info = document.getElementById("digestInfo");
+  info.hidden = false;
+  info.textContent = message;
+  info.className = "cv-status cv-status--error";
+}
+
+async function digestRequest(method, body) {
+  const jwt = await getJwt();
+  const res = await fetch("/api/digest", {
+    method,
+    headers: { Authorization: `Bearer ${jwt}`, ...(body ? { "Content-Type": "application/json" } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Something went wrong");
+  return data;
+}
+
+async function loadDigestInfo() {
+  try {
+    showDigest(await digestRequest("GET"));
+  } catch (err) {
+    if (err.message === "Session expired") logout();
+  }
+}
+
+async function saveDigest(e) {
+  e.preventDefault();
+  try {
+    showDigest(await digestRequest("PUT", { email: document.getElementById("digestEmail").value.trim() }));
+  } catch (err) {
+    showDigestError(err.message);
+  }
+}
+
+async function stopDigest() {
+  try {
+    showDigest(await digestRequest("DELETE"));
+  } catch (err) {
+    showDigestError(err.message);
+  }
+}
+
 // Auth event listeners
 handleAuthCallback();
 document.getElementById("loginBtn").addEventListener("click", login);
@@ -297,6 +439,13 @@ document.getElementById("cvFile").addEventListener("change", (e) => {
 });
 document.getElementById("pageEnabled").addEventListener("change", savePage);
 document.getElementById("pageForm").addEventListener("submit", savePage);
+document.getElementById("feedEnabled").addEventListener("change", (e) => saveFeed({ enabled: e.target.checked }));
+document.getElementById("digestForm").addEventListener("submit", saveDigest);
+document.getElementById("digestStop").addEventListener("click", stopDigest);
+document.getElementById("feedCopy").addEventListener("click", copyFeedUrl);
+document.getElementById("feedRotate").addEventListener("click", () => {
+  if (confirm("Make a new link? The current one stops working.")) saveFeed({ enabled: true, rotate: true });
+});
 
 // ── Job board ────────────────────────────────────────────────────────────────
 

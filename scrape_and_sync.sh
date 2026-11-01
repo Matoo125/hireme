@@ -16,6 +16,9 @@
 # With FIT_USER_IDS set the same way (and ANTHROPIC_API_KEY), new jobs are
 # then scored against those users' CVs (fit_scores.py), after the jobs lock
 # is released so grid edits aren't held up by it.
+#
+# With RESEND_API_KEY set the same way, confirmed email digests then go out
+# (web/digest.ts, run with Bun: BUN, or bun on PATH, or ~/.bun/bin/bun).
 set -uo pipefail
 cd "$(dirname "$0")"
 
@@ -31,6 +34,10 @@ export FIT_USER_IDS
 # credential the SDK could find.
 ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-$(from_env_file ANTHROPIC_API_KEY)}
 if [ -n "$ANTHROPIC_API_KEY" ]; then export ANTHROPIC_API_KEY; else unset ANTHROPIC_API_KEY; fi
+RESEND_API_KEY=${RESEND_API_KEY:-$(from_env_file RESEND_API_KEY)}
+DIGEST_FROM=${DIGEST_FROM:-$(from_env_file DIGEST_FROM)}
+[ -n "$DIGEST_FROM" ] && export DIGEST_FROM
+BUN=${BUN:-$(command -v bun || echo "$HOME/.bun/bin/bun")}
 
 # Ping Healthchecks.io at $1 (a suffix of the check's URL); extra arguments go
 # to curl. Never fails the run: a ping that can't get through is only logged.
@@ -75,6 +82,14 @@ scrape_and_sync() {
         exec 9>&-  # release the jobs lock: scoring only reads jobs.csv
         if ! PYTHONUNBUFFERED=1 python3 fit_scores.py; then
             echo "!!! fit scoring had failures (unscored jobs are retried next run)" >&2
+            [ "$scrape_status" -eq 0 ] && scrape_status=1
+        fi
+    fi
+
+    if [ -n "$RESEND_API_KEY" ]; then
+        exec 9>&-
+        if ! RESEND_API_KEY=$RESEND_API_KEY "$BUN" run web/digest.ts; then
+            echo "!!! email digests had failures (unsent jobs go in the next one)" >&2
             [ "$scrape_status" -eq 0 ] && scrape_status=1
         fi
     fi
