@@ -28,13 +28,16 @@ CONTENT = {
 class FakeClient:
     """Answers messages.parse() with CONTENT, or a refusal when `refuse` is set."""
 
-    def __init__(self, refuse=False):
+    def __init__(self, refuse=False, during=None):
         self.calls = []
         self.refuse = refuse
+        self.during = during  # runs while the model is "reading" the CV
         self.messages = SimpleNamespace(parse=self.parse)
 
     def parse(self, **kwargs):
         self.calls.append(kwargs)
+        if self.during:
+            self.during()
         if self.refuse:
             return SimpleNamespace(stop_reason="refusal", parsed_output=None)
         return SimpleNamespace(stop_reason="end_turn", parsed_output=kwargs["output_format"](**CONTENT))
@@ -113,6 +116,22 @@ class MakeUserPage(unittest.TestCase):
         self.assertTrue(self.run_user(client, dry_run=True))
         self.assertEqual(client.calls, [])
         self.assertFalse((self.data / "page-content" / "7.json").exists())
+
+    def test_cv_deleted_during_generation_writes_nothing(self):
+        cv = self.data / "cv" / "7.pdf"
+        client = FakeClient(during=cv.unlink)
+        self.assertFalse(self.run_user(client))
+        self.assertEqual(len(client.calls), 1)
+        self.assertFalse((self.data / "page-content" / "7.json").exists())
+
+    def test_cv_replaced_during_generation_writes_nothing(self):
+        cv = self.data / "cv" / "7.pdf"
+        client = FakeClient(during=lambda: cv.write_bytes(b"%PDF-1.4 new cv"))
+        self.assertFalse(self.run_user(client))
+        self.assertFalse((self.data / "page-content" / "7.json").exists())
+        # The next run sees the new CV and writes content for it.
+        self.assertTrue(self.run_user(FakeClient()))
+        self.assertEqual(self.saved()["cv"], hashlib.sha256(b"%PDF-1.4 new cv").hexdigest())
 
     def test_refusal_raises_and_writes_nothing(self):
         with self.assertRaises(ValueError):
