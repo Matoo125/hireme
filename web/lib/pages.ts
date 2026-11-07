@@ -1,7 +1,8 @@
 // Opt-in portfolio pages: each user who turns one on gets a public page at
 // <slug>.<PAGES_DOMAIN>, built from their CV. pages_cv.py writes the content
-// (data/page-content/<id>.json); this module keeps the user's settings
-// (data/pages/<id>.json), checks slugs, and renders the HTML.
+// (data/page-content/<id>.json), which the user can then edit; this module
+// keeps the user's settings (data/pages/<id>.json), checks slugs and edits,
+// and renders the HTML.
 
 import { readdir, unlink } from "fs/promises";
 import path from "path";
@@ -16,9 +17,15 @@ export interface PageSettings {
 export interface PageContent {
   cv: string; // sha256 of the CV the content was made from
   model: string;
+  version?: number;
   generatedAt: string;
+  // Set once the user saves the page editor: pages_cv.py then leaves the
+  // content alone until they ask for it to be remade from the CV.
+  edited?: boolean;
+  editedAt?: string;
   content: {
     name: string;
+    language?: string; // BCP 47, the CV's language
     headline: string;
     summary: string;
     skills: string[];
@@ -107,14 +114,128 @@ export async function slugOwner(dir: string, slug: string): Promise<number | nul
   return match ? match.userId : null;
 }
 
-/** The enabled page with this slug, with its owner's id, or null. */
+export async function writeContent(dir: string, userId: number, page: PageContent): Promise<void> {
+  await Bun.write(contentPath(dir, userId), JSON.stringify(page, null, 1));
+}
+
+/** The enabled page with this slug, with its owner's id, or null. A page whose
+ * CV was deleted is never served, even if its content outlived the CV. */
 export async function findPage(
   dir: string, slug: string
 ): Promise<{ userId: number; settings: PageSettings; content: PageContent } | null> {
   const match = (await allSettings(dir)).find((s) => s.settings.enabled && s.settings.slug === slug);
   if (!match) return null;
+  if (!(await Bun.file(path.join(dir, "cv", `${match.userId}.pdf`)).exists())) return null;
   const content = await readContent(dir, match.userId);
   return content ? { ...match, content } : null;
+}
+
+// ── Edits ────────────────────────────────────────────────────────────────────
+
+type Content = PageContent["content"];
+
+// Generous for a one-page portfolio, small enough that a page stays a page.
+const LIMITS = { short: 200, long: 3000, items: 40, bullets: 30 };
+
+class EditError extends Error {}
+
+function text(value: unknown, field: string, max: number): string {
+  if (value === undefined || value === null) return "";
+  if (typeof value !== "string") throw new EditError(`${field} must be text`);
+  const trimmed = value.trim();
+  if (trimmed.length > max) throw new EditError(`${field} is too long (at most ${max} characters)`);
+  return trimmed;
+}
+
+function list(value: unknown, field: string, max = LIMITS.items): unknown[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new EditError(`${field} must be a list`);
+  if (value.length > max) throw new EditError(`${field} has too many entries (at most ${max})`);
+  return value;
+}
+
+function record(value: unknown, field: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new EditError(`${field} must be an object`);
+  return value as Record<string, unknown>;
+}
+
+// "linkedin.com/in/jane": a bare address, typed without https://.
+const BARE_ADDRESS = /^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+([/?#]\S*)?$/i;
+
+/** A link field: empty, or an http(s) URL. A bare address gets https://. */
+function link(value: unknown, field: string, required = false): string {
+  let raw = text(value, field, 2000);
+  if (!raw && !required) return "";
+  if (BARE_ADDRESS.test(raw)) raw = `https://${raw}`;
+  if (!webUrl(raw)) throw new EditError(`${field} must be a web address starting with https:// or http://`);
+  return raw;
+}
+
+/**
+ * The page content from an edit, trimmed, with empty entries dropped; or why it
+ * can't be saved. The user may write what they like (their own contact details
+ * included), but only http(s) links and only the fields a page shows.
+ */
+export function cleanEdit(body: unknown): { content: Content } | { error: string } {
+  try {
+    const c = record(body, "content");
+    const name = text(c.name, "Name", LIMITS.short);
+    if (!name) throw new EditError("Name can't be empty");
+    const language = text(c.language, "Language", 35);
+    const content: Content = {
+      name,
+      language: LANG_PATTERN.test(language) ? language : "",
+      headline: text(c.headline, "Headline", LIMITS.short),
+      summary: text(c.summary, "Summary", LIMITS.long),
+      skills: list(c.skills, "Skills", 80).map((s) => text(s, "A skill", 80)).filter(Boolean),
+      experience: list(c.experience, "Experience").map((raw, i) => {
+        const e = record(raw, `Experience ${i + 1}`);
+        const where = `Experience ${i + 1}`;
+        return {
+          title: text(e.title, `${where}: title`, LIMITS.short),
+          organization: text(e.organization, `${where}: organization`, LIMITS.short),
+          period: text(e.period, `${where}: period`, 80),
+          location: text(e.location, `${where}: location`, LIMITS.short),
+          bullets: list(e.bullets, `${where}: bullets`, LIMITS.bullets)
+            .map((b) => text(b, `${where}: a bullet`, 1000)).filter(Boolean),
+        };
+      }).filter((e) => e.title || e.organization || e.bullets.length),
+      education: list(c.education, "Education").map((raw, i) => {
+        const e = record(raw, `Education ${i + 1}`);
+        const where = `Education ${i + 1}`;
+        return {
+          school: text(e.school, `${where}: school`, LIMITS.short),
+          degree: text(e.degree, `${where}: degree`, LIMITS.short),
+          period: text(e.period, `${where}: period`, 80),
+        };
+      }).filter((e) => e.school || e.degree),
+      projects: list(c.projects, "Projects").map((raw, i) => {
+        const p = record(raw, `Project ${i + 1}`);
+        const where = `Project ${i + 1}`;
+        return {
+          title: text(p.title, `${where}: title`, LIMITS.short),
+          description: text(p.description, `${where}: description`, LIMITS.long),
+          url: link(p.url, `${where}: link`),
+        };
+      }).filter((p) => p.title || p.description),
+      links: list(c.links, "Links", 20).map((raw, i) => {
+        const l = record(raw, `Link ${i + 1}`);
+        const label = text(l.label, `Link ${i + 1}: label`, 80);
+        const url = text(l.url, `Link ${i + 1}: address`, 2000);
+        return { label, url: label || url ? link(url, `Link ${i + 1}: address`, true) : "" };
+      }).filter((l) => l.url).map((l) => ({ label: l.label || new URL(l.url).hostname, url: l.url })),
+    };
+    for (const [i, e] of content.experience.entries()) {
+      if (!e.title) throw new EditError(`Experience ${i + 1} needs a title`);
+    }
+    for (const [i, p] of content.projects.entries()) {
+      if (!p.title) throw new EditError(`Project ${i + 1} needs a title`);
+    }
+    return { content };
+  } catch (err) {
+    if (err instanceof EditError) return { error: err.message };
+    throw err;
+  }
 }
 
 /** An https or http link, or null: page links must not run script or open files. */
@@ -126,6 +247,9 @@ function webUrl(raw: string): string | null {
     return null;
   }
 }
+
+// A language tag safe to put in lang="": "sk", "en-GB", "sr-Latn".
+const LANG_PATTERN = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
 
 const esc = (value: string) =>
   value.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -188,7 +312,7 @@ export function renderPage(page: PageContent, slug: string): string {
     : "";
 
   return `<!doctype html>
-<html lang="en">
+<html lang="${LANG_PATTERN.test(c.language ?? "") ? c.language : "en"}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -206,7 +330,7 @@ export function renderPage(page: PageContent, slug: string): string {
   ${section("Projects", projects)}
   ${section("Education", education)}
   ${section("Skills", skills)}
-  <footer>Published at ${esc(slug)} on hireme.sk · generated from a CV, last updated ${esc(page.generatedAt.slice(0, 10))}</footer>
+  <footer>Published at ${esc(slug)} on hireme.sk · ${page.edited ? "" : "generated from a CV, "}last updated ${esc((page.editedAt ?? page.generatedAt).slice(0, 10))}</footer>
 </main>
 </body>
 </html>

@@ -84,7 +84,23 @@ await Bun.write(path.join(dir, "data", "cv-advice", "7.json"), JSON.stringify({
   },
 }));
 
+// Portfolio page content for the plain user, as pages_cv.py would write it for
+// a CV whose bytes are "%PDF-1.4 page cv"; page-editor.js uploads that CV, so
+// turning the page on finds it up to date and calls nothing. Written again
+// before every test, since deleting a CV deletes it.
+const PAGE_CONTENT = JSON.stringify({
+  cv: new Bun.CryptoHasher("sha256").update("%PDF-1.4 page cv").digest("hex"),
+  model: "claude-haiku-5-5", version: 2, generatedAt: "2026-11-01T10:00:00Z",
+  content: {
+    name: "Jane Example", language: "en", headline: "Policy researcher", summary: "Writes about policy.",
+    skills: ["Research"], experience: [{ title: "Researcher", organization: "Think tank", period: "2020 - 2024",
+      location: "Bratislava", bullets: ["Wrote reports"] }],
+    education: [], projects: [], links: [{ label: "Blog", url: "https://example.org" }],
+  },
+});
+
 async function resetData() {
+  await Bun.write(path.join(dir, "data", "page-content", "7.json"), PAGE_CONTENT);
   await Bun.write(files.overrides, "# Browser tests.\n");
   const proc = Bun.spawn(
     ["python3", "-m", "scrapers.overrides", "rebuild",
@@ -144,6 +160,10 @@ const server = Bun.spawn(["bun", "run", "server.ts"], {
     RESEND_API_KEY: "re_test",
     RESEND_API_URL: `http://127.0.0.1:${resend.port}/emails`,
     SITE_URL: base,
+    // Scripts that would call Claude (pages_cv.py on "Remake from CV") reach
+    // nothing and fail, the way a real failure would.
+    ANTHROPIC_API_KEY: "test-no-calls",
+    ANTHROPIC_BASE_URL: "http://127.0.0.1:9",
   },
   stdout: "ignore",
   stderr: "inherit",

@@ -316,6 +316,7 @@ const PAGE_STATUS_TEXT = {
 };
 
 let pagePolls = 0;
+let pageEdited = false;
 
 function showPage(page) {
   const pageEnabled = document.getElementById("pageEnabled");
@@ -324,22 +325,35 @@ function showPage(page) {
 
   pageEnabled.checked = page.enabled;
   if (!pageSlug.matches(":focus")) pageSlug.value = page.slug;
-  pageInfo.className = "cv-status";
+  pageInfo.className = page.error ? "cv-status cv-status--error" : "cv-status";
   pageInfo.hidden = false;
-  if (page.status === "ready") {
-    pageInfo.innerHTML = "";
+  const live = () => {
     const link = document.createElement("a");
     link.href = page.url;
     link.target = "_blank";
     link.rel = "noopener";
     link.textContent = page.url;
-    pageInfo.append("Your page is live at ", link);
+    return link;
+  };
+  if (page.error && page.status !== "generating") {
+    pageInfo.textContent = page.error;
+  } else if (page.status === "ready") {
+    pageInfo.replaceChildren("Your page is live at ", live(), page.edited ? ", with your edits." : "");
+  } else if (page.status === "outdated") {
+    pageInfo.replaceChildren("Your page is live at ", live(),
+      ", with your edits. You've uploaded a new CV since: remake the page to use it (this replaces your edits).");
   } else {
     pageInfo.textContent = PAGE_STATUS_TEXT[page.status] ?? "";
   }
 
+  // Edit and remake once there's content; not while it's being made.
+  pageEdited = page.edited;
+  const editable = page.hasContent && page.enabled && page.status !== "generating";
+  document.getElementById("pageActions").hidden = !editable;
+  if (!editable) document.getElementById("pageEditor").hidden = true;
+
   // The page is made in the background: check back until it's ready (about a minute at most).
-  if (page.status === "generating" || page.status === "pending") {
+  if ((page.status === "generating" || page.status === "pending") && !page.error) {
     if (pagePolls++ < 20) setTimeout(loadPageInfo, 3000);
   } else {
     pagePolls = 0;
@@ -387,6 +401,143 @@ async function savePage(e) {
   } catch (err) {
     // Show what the server has, then say why the change didn't go through.
     await loadPageInfo();
+    showPageError(err.message);
+  }
+}
+
+// ── Page editor ──────────────────────────────────────────────────────────────
+// The page's content as fields. Saving makes it the user's own: a new CV no
+// longer changes it until they choose "Remake from CV".
+
+const PAGE_LISTS = [
+  { key: "experience", title: "Experience", add: "Add a role", fields: [
+    ["title", "Title"], ["organization", "Organization"], ["period", "Period"], ["location", "Location"],
+    ["bullets", "Points, one per line", "lines"]] },
+  { key: "projects", title: "Projects", add: "Add a project", fields: [
+    ["title", "Title"], ["url", "Link (https://…)"], ["description", "Description", "long"]] },
+  { key: "education", title: "Education", add: "Add a school", columns: 3, fields: [
+    ["school", "School"], ["degree", "Degree"], ["period", "Period"]] },
+  { key: "links", title: "Links", add: "Add a link", fields: [
+    ["label", "Label"], ["url", "Address (https://…)"]] },
+];
+
+let pageLanguage = "";
+
+function editorField(field, label, value, kind) {
+  const wrap = el("label", kind ? "page-editor-field page-editor-field--wide" : "page-editor-field");
+  wrap.append(el("span", "", label));
+  const input = document.createElement(kind ? "textarea" : "input");
+  if (!kind) input.type = "text";
+  input.value = kind === "lines" ? (value ?? []).join("\n") : (value ?? "");
+  if (kind) input.rows = Math.min(10, Math.max(kind === "long" ? 4 : 3, input.value.split("\n").length + 1));
+  input.dataset.field = field;
+  input.dataset.kind = kind ?? "";
+  wrap.append(input);
+  return wrap;
+}
+
+function editorItem(list, item) {
+  const box = el("div", "page-editor-item");
+  for (const [field, label, kind] of list.fields) box.append(editorField(field, label, item[field], kind));
+  const tools = el("div", "page-editor-tools");
+  const up = el("button", "cv-action page-editor-up", "Move up");
+  up.type = "button";
+  up.addEventListener("click", () => box.previousElementSibling && box.parentNode.insertBefore(box, box.previousElementSibling));
+  const remove = el("button", "cv-action cv-action--danger", "Remove");
+  remove.type = "button";
+  remove.addEventListener("click", () => box.remove());
+  tools.append(up, remove);
+  box.append(tools);
+  return box;
+}
+
+function fillEditor(content) {
+  pageLanguage = content.language ?? "";
+  const fields = document.getElementById("pageEditorFields");
+  const basics = el("div", "page-editor-basics");
+  basics.append(
+    editorField("name", "Name", content.name),
+    editorField("headline", "Headline", content.headline),
+    editorField("summary", "Summary", content.summary, "long"),
+    editorField("skills", "Skills, one per line", content.skills, "lines"),
+  );
+  fields.replaceChildren(basics);
+  for (const list of PAGE_LISTS) {
+    const items = el("div", "page-editor-list");
+    items.dataset.list = list.key;
+    items.style.setProperty("--columns", list.columns ?? 2);
+    for (const item of content[list.key] ?? []) items.append(editorItem(list, item));
+    const add = el("button", "cv-action", list.add);
+    add.type = "button";
+    add.addEventListener("click", () => items.append(editorItem(list, {})));
+    fields.append(el("h4", "", list.title), items, add);
+  }
+}
+
+function readEditor() {
+  const value = (input) => (input.dataset.kind === "lines" ? input.value.split("\n") : input.value);
+  const fieldsOf = (node) => Object.fromEntries(
+    [...node.querySelectorAll("[data-field]")].map((input) => [input.dataset.field, value(input)]));
+  const content = { language: pageLanguage, ...fieldsOf(document.querySelector("#pageEditorFields .page-editor-basics")) };
+  for (const list of PAGE_LISTS) {
+    content[list.key] = [...document.querySelectorAll(`[data-list="${list.key}"] > .page-editor-item`)].map(fieldsOf);
+  }
+  return content;
+}
+
+function showEditorInfo(message, error = false) {
+  const info = document.getElementById("pageEditorInfo");
+  info.hidden = !message;
+  info.textContent = message;
+  info.className = error ? "cv-status cv-status--error" : "cv-status";
+}
+
+async function openPageEditor() {
+  try {
+    const jwt = await getJwt();
+    const res = await fetch("/api/page/content", { headers: { Authorization: `Bearer ${jwt}` } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Couldn't load your page");
+    fillEditor(data.content);
+    showEditorInfo("");
+    document.getElementById("pageEditor").hidden = false;
+  } catch (err) {
+    if (err.message === "Session expired") return logout();
+    showPageError(err.message);
+  }
+}
+
+async function savePageContent(e) {
+  e.preventDefault();
+  try {
+    const jwt = await getJwt();
+    const res = await fetch("/api/page/content", {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ content: readEditor() }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Save failed");
+    document.getElementById("pageEditor").hidden = true;
+    showPage(data);
+  } catch (err) {
+    if (err.message === "Session expired") return logout();
+    showEditorInfo(err.message, true);
+  }
+}
+
+async function remakePage() {
+  if (pageEdited && !confirm("Remake your page from your CV? Your edits will be replaced.")) return;
+  try {
+    const jwt = await getJwt();
+    const res = await fetch("/api/page/remake", { method: "POST", headers: { Authorization: `Bearer ${jwt}` } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Couldn't start");
+    document.getElementById("pageEditor").hidden = true;
+    pagePolls = 0;
+    showPage(data);
+  } catch (err) {
+    if (err.message === "Session expired") return logout();
     showPageError(err.message);
   }
 }
@@ -538,6 +689,12 @@ document.getElementById("cvFile").addEventListener("change", (e) => {
 });
 document.getElementById("pageEnabled").addEventListener("change", savePage);
 document.getElementById("pageForm").addEventListener("submit", savePage);
+document.getElementById("pageEditBtn").addEventListener("click", openPageEditor);
+document.getElementById("pageRemakeBtn").addEventListener("click", remakePage);
+document.getElementById("pageEditor").addEventListener("submit", savePageContent);
+document.getElementById("pageEditCancel").addEventListener("click", () => {
+  document.getElementById("pageEditor").hidden = true;
+});
 document.getElementById("feedEnabled").addEventListener("change", (e) => saveFeed({ enabled: e.target.checked }));
 document.getElementById("digestForm").addEventListener("submit", saveDigest);
 document.getElementById("digestStop").addEventListener("click", stopDigest);

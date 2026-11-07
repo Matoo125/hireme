@@ -347,9 +347,15 @@ it off takes it down (the address stays theirs).
 - `pages_cv.py --user <id>` reads the uploaded CV with Claude and writes
   `data/page-content/<id>.json`: name, headline, summary, skills, experience,
   education, projects and the links the CV gives. It never includes contact
-  details, and it runs only when the CV has changed. The server runs it
-  after an upload, and after the page is turned on.
-- Deleting the CV deletes the page's content.
+  details (any email address or phone number the model writes anyway is cut
+  out), and it runs only when the CV has changed. The server runs it after an
+  upload, and after the page is turned on.
+- The user can edit the page ("Edit page"). Once edited, a new CV no longer
+  changes it: the page says the CV is newer, and "Remake from CV"
+  (`pages_cv.py --force`) replaces the edits. Remake also helps when the text
+  came out wrong. A failed run is shown to the user.
+- Deleting the CV deletes the page's content, and a page is never served
+  without its CV.
 - The server answers `<slug>.hireme.sk` with the page, and everything else
   on that host with 404.
 

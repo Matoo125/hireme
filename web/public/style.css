@@ -521,6 +521,92 @@ main {
   color: var(--muted);
 }
 
+/* ── Page editor ──────────────────────────────────────────────────────── */
+
+.page-actions {
+  margin: 0.5rem 0 0;
+}
+
+.page-editor {
+  margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--border);
+  max-width: 720px;
+}
+
+.page-editor h4 {
+  margin: 1rem 0 0.4rem;
+  font-size: 0.85rem;
+}
+
+.page-editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.page-editor-field input,
+.page-editor-field textarea {
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+  font-size: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  resize: vertical;
+}
+
+.page-editor-note {
+  margin: 0 0 0.6rem;
+}
+
+.page-editor-field textarea {
+  field-sizing: content; /* grows with its text where supported; rows elsewhere */
+  min-height: 3.5em;
+  max-height: 24em;
+}
+
+/* Short fields side by side (--columns per list); long ones and the item's buttons across. */
+.page-editor-item {
+  display: grid;
+  grid-template-columns: repeat(var(--columns, 2), minmax(0, 1fr));
+  column-gap: 0.6rem;
+  margin-bottom: 0.6rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.page-editor-field--wide,
+.page-editor-tools {
+  grid-column: 1 / -1;
+}
+
+.page-editor-item:first-child .page-editor-up {
+  display: none;
+}
+
+@media (max-width: 560px) {
+  .page-editor-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.page-editor-tools,
+.page-editor-buttons {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+}
+
+.page-editor-buttons {
+  margin-top: 1rem;
+}
+
 /* ── Add job by link ──────────────────────────────────────────────────── */
 
 .add-job-form {

@@ -2,11 +2,11 @@
 // storage lookups in lib/pages.ts.
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm } from "fs/promises";
+import { mkdir, mkdtemp, rm, unlink } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import {
-  cvHash, findPage, renderNotFound, renderPage, removeContent, slugFromHost, slugOwner,
+  cleanEdit, cvHash, findPage, renderNotFound, renderPage, removeContent, slugFromHost, slugOwner,
   slugProblem, writeSettings, type PageContent,
 } from "../lib/pages";
 
@@ -102,8 +102,84 @@ describe("renderPage", () => {
     expect(html).toContain("last updated 2026-10-27");
   });
 
+  test("declares the content's language, and only a well-formed one", () => {
+    expect(html).toContain('<html lang="en">');
+    const sk = renderPage({ ...page, content: { ...page.content, language: "sk" } }, "jane");
+    expect(sk).toContain('<html lang="sk">');
+    const bad = renderPage({ ...page, content: { ...page.content, language: '"><script>' } }, "jane");
+    expect(bad).toContain('<html lang="en">');
+  });
+
+  test("an edited page says when it was edited, not that it was generated", () => {
+    const edited = renderPage({ ...page, edited: true, editedAt: "2026-11-07T12:00:00Z" }, "jane");
+    expect(edited).toContain("last updated 2026-11-07");
+    expect(edited).not.toContain("generated from a CV");
+  });
+
   test("the not-found page has no scripts either", () => {
     expect(renderNotFound()).not.toContain("<script");
+  });
+});
+
+describe("cleanEdit", () => {
+  const ok = (body: unknown) => {
+    const result = cleanEdit(body);
+    if ("error" in result) throw new Error(result.error);
+    return result.content;
+  };
+  const problem = (body: unknown) => {
+    const result = cleanEdit(body);
+    return "error" in result ? result.error : null;
+  };
+
+  test("keeps a well-formed page as it is", () => {
+    const clean = {
+      ...page.content, language: "sk",
+      projects: page.content.projects.slice(0, 1), links: page.content.links.slice(0, 1),
+    };
+    expect(ok(clean)).toEqual(clean);
+  });
+
+  test("trims text and drops empty entries", () => {
+    const content = ok({
+      name: "  Jane  ", skills: ["Python", " ", ""],
+      experience: [{ title: "Engineer", bullets: ["Did it", "  "] }, { title: "", organization: "", bullets: [] }],
+      education: [{ school: "", degree: "" }],
+      links: [{ label: "", url: "" }, { label: "", url: "https://example.org/me" }],
+    });
+    expect(content.name).toBe("Jane");
+    expect(content.skills).toEqual(["Python"]);
+    expect(content.experience).toEqual([{ title: "Engineer", organization: "", period: "", location: "", bullets: ["Did it"] }]);
+    expect(content.education).toEqual([]);
+    expect(content.links).toEqual([{ label: "example.org", url: "https://example.org/me" }]);
+  });
+
+  test("completes addresses typed without https://", () => {
+    const content = ok({ name: "Jane", links: [{ label: "LinkedIn", url: "linkedin.com/in/jane" }],
+      projects: [{ title: "P", url: "www.example.org/p?x=1" }] });
+    expect(content.links[0].url).toBe("https://linkedin.com/in/jane");
+    expect(content.projects[0].url).toBe("https://www.example.org/p?x=1");
+  });
+
+  test("refuses links that aren't web addresses", () => {
+    expect(problem({ name: "Jane", links: [{ label: "x", url: "not a link" }] })).toContain("Link 1");
+    expect(problem({ name: "Jane", links: [{ label: "x", url: "javascript:alert(1)" }] })).toContain("Link 1");
+    expect(problem({ name: "Jane", projects: [{ title: "P", url: "data:text/html,hi" }] })).toContain("Project 1");
+  });
+
+  test("refuses a missing name, untitled roles, wrong types and oversized text", () => {
+    expect(problem({ name: " " })).toBe("Name can't be empty");
+    expect(problem(null)).not.toBeNull();
+    expect(problem({ name: "Jane", experience: [{ organization: "Acme" }] })).toBe("Experience 1 needs a title");
+    expect(problem({ name: "Jane", skills: "Python" })).toBe("Skills must be a list");
+    expect(problem({ name: "Jane", summary: "x".repeat(3001) })).toContain("too long");
+    expect(problem({ name: "Jane", skills: Array(81).fill("x") })).toContain("too many");
+  });
+
+  test("keeps only the fields a page shows", () => {
+    const content = ok({ name: "Jane", email: "jane@example.com", experience: [{ title: "E", secret: 1 }] }) as any;
+    expect(content.email).toBeUndefined();
+    expect(content.experience[0].secret).toBeUndefined();
   });
 });
 
@@ -122,6 +198,7 @@ describe("storage lookups", () => {
     dir = await mkdtemp(path.join(tmpdir(), "hireme-pages-"));
     await mkdir(path.join(dir, "pages"), { recursive: true });
     await mkdir(path.join(dir, "page-content"), { recursive: true });
+    await Bun.write(path.join(dir, "cv", "1.pdf"), "%PDF-1.4 jane");
     await writeSettings(dir, 1, { enabled: true, slug: "jane", updatedAt: "" });
     await Bun.write(path.join(dir, "page-content", "1.json"), JSON.stringify(page));
     await writeSettings(dir, 2, { enabled: false, slug: "off-page", updatedAt: "" });
@@ -143,6 +220,13 @@ describe("storage lookups", () => {
     expect(await findPage(dir, "off-page")).toBeNull();
     expect(await findPage(dir, "no-content")).toBeNull();
     expect(await findPage(dir, "free")).toBeNull();
+  });
+
+  test("findPage never serves a page whose CV is gone", async () => {
+    await unlink(path.join(dir, "cv", "1.pdf"));
+    expect(await findPage(dir, "jane")).toBeNull();
+    await Bun.write(path.join(dir, "cv", "1.pdf"), "%PDF-1.4 jane");
+    expect((await findPage(dir, "jane"))?.userId).toBe(1);
   });
 
   test("removeContent takes a page down without touching its settings", async () => {

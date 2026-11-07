@@ -56,6 +56,19 @@
         <button type="submit" class="auth-btn auth-btn--small">Save address</button>
       </form>
       <p id="pageInfo" class="cv-status" hidden></p>
+      <div id="pageActions" class="cv-info page-actions" hidden>
+        <button id="pageEditBtn" type="button" class="cv-action">Edit page</button>
+        <button id="pageRemakeBtn" type="button" class="cv-action">Remake from CV</button>
+      </div>
+      <form id="pageEditor" class="page-editor" hidden>
+        <p class="cv-status page-editor-note">Changes go live when you save. Your page shows only what's here: leave out anything you don't want public.</p>
+        <div id="pageEditorFields"></div>
+        <div class="page-editor-buttons">
+          <button type="submit" class="auth-btn auth-btn--small">Save page</button>
+          <button id="pageEditCancel" type="button" class="cv-action">Cancel</button>
+        </div>
+        <p id="pageEditorInfo" class="cv-status" hidden></p>
+      </form>
     </div>
 
     <div id="feedSection" class="cv-section" hidden>

@@ -8,8 +8,8 @@ import { fetchPage, FetchError } from "./lib/fetch-page";
 import { parseRows } from "./lib/csv";
 import { handleV1 } from "./lib/api-v1";
 import {
-  cvHash, findPage, readContent, readSettings, removeContent, renderNotFound, renderPage,
-  slugFromHost, slugOwner, slugProblem, writeSettings, type PageSettings,
+  cleanEdit, cvHash, findPage, readContent, readSettings, removeContent, renderNotFound, renderPage,
+  slugFromHost, slugOwner, slugProblem, writeContent, writeSettings, type PageSettings,
 } from "./lib/pages";
 import {
   DEFAULT_MIN_FIT, feedItems, findFeed, newToken, readFeed, removeFeed, renderFeed, writeFeed,
@@ -238,32 +238,41 @@ async function adviceStatus(userId: number) {
 
 // pages_cv.py makes one user's content at a time. A CV uploaded while a run is
 // going asks for another run when it finishes, so the content never stays
-// made from the old CV.
+// made from the old CV. `force` remakes it even over the user's edits (the
+// "Remake from CV" button). The last failure is kept to show the user.
 const pageJobs = new Set<number>();
-const pageRerun = new Set<number>();
+const pageRerun = new Map<number, boolean>(); // user id → force
+const pageErrors = new Map<number, string>();
 
-function startPageContent(userId: number): void {
+function startPageContent(userId: number, force = false): void {
   if (pageJobs.has(userId)) {
-    pageRerun.add(userId);
+    pageRerun.set(userId, force || (pageRerun.get(userId) ?? false));
     return;
   }
   pageJobs.add(userId);
+  pageErrors.delete(userId);
   const finish = () => {
     pageJobs.delete(userId);
-    if (pageRerun.delete(userId)) startPageContent(userId);
+    const rerun = pageRerun.get(userId);
+    pageRerun.delete(userId);
+    if (rerun !== undefined) startPageContent(userId, rerun);
+  };
+  const failed = (detail: string) => {
+    console.error(`Page content for user ${userId} failed: ${detail}`);
+    pageErrors.set(userId, "Making your page from your CV failed. Try again in a few minutes.");
   };
   try {
     const proc = Bun.spawn(
-      ["python3", "pages_cv.py", "--user", String(userId), "--data-dir", DATA_DIR],
+      ["python3", "pages_cv.py", "--user", String(userId), "--data-dir", DATA_DIR, ...(force ? ["--force"] : [])],
       { cwd: REPO_DIR, stdout: "pipe", stderr: "pipe" }
     );
     Promise.all([new Response(proc.stderr).text(), proc.exited])
       .then(([stderr, code]) => {
-        if (code !== 0) console.error(`Page content for user ${userId} failed: ${stderr.trim()}`);
+        if (code !== 0) failed(stderr.trim());
       })
       .finally(finish);
   } catch (exc) {
-    console.error(`Page content for user ${userId} could not start: ${exc}`);
+    failed(`could not start: ${exc}`);
     finish();
   }
 }
@@ -271,18 +280,27 @@ function startPageContent(userId: number): void {
 async function pageStatus(userId: number, settings: PageSettings | null) {
   const pdf = Bun.file(cvPdfPath(userId));
   const content = await readContent(DATA_DIR, userId);
-  let status: "off" | "no-cv" | "generating" | "ready" | "pending";
+  const current = content && (await pdf.exists()) && content.cv === cvHash(new Uint8Array(await pdf.arrayBuffer()));
+  // "outdated": the user edited the page, then uploaded a new CV; their edits
+  // stay live until they ask for the page to be remade from it.
+  let status: "off" | "no-cv" | "generating" | "ready" | "pending" | "outdated";
   if (!settings?.enabled) status = "off";
   else if (!(await pdf.exists())) status = "no-cv";
   else if (pageJobs.has(userId)) status = "generating";
-  else if (content && content.cv === cvHash(new Uint8Array(await pdf.arrayBuffer()))) status = "ready";
+  else if (current) status = "ready";
+  else if (content?.edited) status = "outdated";
   else status = "pending";
   return {
     enabled: settings?.enabled ?? false,
     slug: settings?.slug ?? "",
     url: settings?.enabled ? `https://${settings.slug}.${PAGES_DOMAIN}/` : null,
     status,
+    // Content to show and edit: there is some, and it's for a CV the user still has.
+    hasContent: Boolean(content) && status !== "no-cv",
+    edited: content?.edited ?? false,
+    error: pageErrors.get(userId) ?? null,
     generatedAt: content?.generatedAt ?? null,
+    editedAt: content?.editedAt ?? null,
   };
 }
 
@@ -721,6 +739,7 @@ Bun.serve({
         try { await unlink(cvMetaPath(user.id)); } catch {}
         // The page was made from this CV; take its content down with it.
         await removeContent(DATA_DIR, user.id);
+        pageErrors.delete(user.id);
         // So was the advice, which quotes it.
         try { await unlink(path.join(ADVICE_DIR, `${user.id}.json`)); } catch {}
         return Response.json({ ok: true });
@@ -994,6 +1013,53 @@ Bun.serve({
         return Response.json(await pageStatus(user.id, settings));
       }
 
+      return new Response("Method not allowed", { status: 405 });
+    }
+
+    // GET /api/page/content → {content, edited, generatedAt, editedAt}
+    // PUT /api/page/content {content} → save the user's edits
+    // POST /api/page/remake → make the content from the CV again, replacing edits
+    if (url.pathname === "/api/page/content" || url.pathname === "/api/page/remake") {
+      let user: { id: number; username: string | null };
+      try {
+        user = await verifyToken(req.headers.get("authorization"));
+      } catch {
+        return Response.json({ error: "unauthorized" }, { status: 401 });
+      }
+      const hasCv = await Bun.file(cvPdfPath(user.id)).exists();
+
+      if (url.pathname === "/api/page/remake") {
+        if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
+        const settings = await readSettings(DATA_DIR, user.id);
+        if (!settings?.enabled) return Response.json({ error: "Turn your page on first" }, { status: 400 });
+        if (!hasCv) return Response.json({ error: "Upload a CV first" }, { status: 400 });
+        startPageContent(user.id, true);
+        return Response.json(await pageStatus(user.id, settings));
+      }
+
+      const saved = hasCv ? await readContent(DATA_DIR, user.id) : null;
+      if (req.method === "GET") {
+        if (!saved) return Response.json({ error: "Your page hasn't been made yet" }, { status: 404 });
+        const { content, edited = false, generatedAt, editedAt = null } = saved;
+        return Response.json({ content, edited, generatedAt, editedAt });
+      }
+      if (req.method === "PUT") {
+        if (!saved) return Response.json({ error: "Your page hasn't been made yet" }, { status: 404 });
+        // A run going now would be skipped or overwrite these edits; wait for it.
+        if (pageJobs.has(user.id)) {
+          return Response.json({ error: "Your page is being made from your CV. Try again when it's done." }, { status: 409 });
+        }
+        const raw = await req.text();
+        if (raw.length > 200_000) return Response.json({ error: "Too long" }, { status: 413 });
+        let body: { content?: unknown } | null = null;
+        try { body = JSON.parse(raw); } catch {}
+        const cleaned = cleanEdit(body?.content);
+        if ("error" in cleaned) return Response.json({ error: cleaned.error }, { status: 400 });
+        await writeContent(DATA_DIR, user.id, {
+          ...saved, content: cleaned.content, edited: true, editedAt: new Date().toISOString(),
+        });
+        return Response.json(await pageStatus(user.id, await readSettings(DATA_DIR, user.id)));
+      }
       return new Response("Method not allowed", { status: 405 });
     }
 
