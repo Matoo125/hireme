@@ -1,4 +1,5 @@
-// Send each confirmed digest its new jobs: bun run digest.ts [--dry-run]
+// Send each confirmed digest its new jobs, and a reminder for saved jobs that
+// close soon (lib/reminders.ts): bun run digest.ts [--dry-run]
 //
 // Run by scrape_and_sync.sh after fit scoring. A user with nothing new gets
 // no email. A failed send leaves that user's jobs unsent for the next run and
@@ -7,7 +8,10 @@
 
 import path from "path";
 import { parseRows } from "./lib/csv";
-import { allDigests, digestEmail, digestItems, recordDigestSent, sendEmail, writeDigest } from "./lib/digest";
+import {
+  allDigests, digestEmail, digestItems, readDigest, recordDigestSent, sendEmail, writeDigest, type DigestSettings,
+} from "./lib/digest";
+import { recordReminded, reminderEmail, reminderItems } from "./lib/reminders";
 
 const ROOT = import.meta.dir;
 const CSV_PATH = process.env.JOBS_CSV ?? path.join(ROOT, "..", "jobs.csv");
@@ -28,35 +32,55 @@ const today = new Date().toISOString().slice(0, 10);
 let failures = 0;
 let sent = 0;
 
-for (const { userId, digest } of await allDigests(DATA_DIR)) {
-  if (!digest.confirmed) continue;
-  const fitFile = Bun.file(path.join(FIT_DIR, `${userId}.json`));
-  const scores = (await fitFile.exists()) ? (await fitFile.json()).scores : {};
-  const items = digestItems(rows, scores, digest, today);
-  if (!items.length) {
-    console.log(`user ${userId}: nothing new`);
-    continue;
-  }
-  const unsubscribe = `${SITE_URL}/digest/unsubscribe/${digest.unsubscribeToken}`;
-  const email = digestEmail(digest.email, items, SITE_URL, unsubscribe, digest.minFit);
+const readJson = async <T>(file: string, fallback: T): Promise<T> => {
+  const f = Bun.file(file);
+  return (await f.exists()) ? f.json().catch(() => fallback) : fallback;
+};
+
+/** Send one email; on success, save what it recorded unless the user unsubscribed or moved address meanwhile. */
+async function deliver(
+  userId: number, digest: DigestSettings, email: ReturnType<typeof digestEmail>,
+  record: (current: DigestSettings) => DigestSettings, what: string
+): Promise<void> {
   if (dryRun) {
-    console.log(`user ${userId}: would send "${email.subject}" (${items.length} jobs)`);
-    continue;
+    console.log(`user ${userId}: would send "${email.subject}" (${what})`);
+    return;
   }
   try {
     await sendEmail(email, { apiKey: API_KEY, from: FROM, url: process.env.RESEND_API_URL });
-    // Re-read: the user may have unsubscribed or changed address meanwhile.
-    const current = await Bun.file(path.join(DATA_DIR, "digests", `${userId}.json`)).json().catch(() => null);
-    if (current?.unsubscribeToken === digest.unsubscribeToken) {
-      await writeDigest(DATA_DIR, userId, recordDigestSent(current, items, new Date()));
-    }
+    const current = await readDigest(DATA_DIR, userId).catch(() => null);
+    if (current?.unsubscribeToken === digest.unsubscribeToken) await writeDigest(DATA_DIR, userId, record(current));
     sent++;
-    console.log(`user ${userId}: sent ${items.length === 1 ? "1 job" : `${items.length} jobs`}`);
+    console.log(`user ${userId}: sent ${what}`);
   } catch (err) {
     failures++;
-    console.error(`!!! user ${userId}: digest failed: ${err}`);
+    console.error(`!!! user ${userId}: ${what} failed: ${err}`);
   }
 }
 
-console.log(`digests: ${sent} sent, ${failures} failed`);
+for (const { userId, digest } of await allDigests(DATA_DIR)) {
+  if (!digest.confirmed) continue;
+  const unsubscribe = `${SITE_URL}/digest/unsubscribe/${digest.unsubscribeToken}`;
+
+  const scores = (await readJson<{ scores?: Record<string, never> }>(path.join(FIT_DIR, `${userId}.json`), {})).scores ?? {};
+  const items = digestItems(rows, scores, digest, today);
+  if (items.length) {
+    await deliver(userId, digest, digestEmail(digest.email, items, SITE_URL, unsubscribe, digest.minFit),
+      (current) => recordDigestSent(current, items, new Date()), items.length === 1 ? "1 job" : `${items.length} jobs`);
+  } else {
+    console.log(`user ${userId}: nothing new`);
+  }
+
+  // Saved jobs closing soon: the listing plus the user's own added jobs.
+  const prefs = await readJson(path.join(DATA_DIR, "preferences", `${userId}.json`), {});
+  const apps = await readJson(path.join(DATA_DIR, "applications", `${userId}.json`), {});
+  const own = await readJson<Record<string, string>[]>(path.join(DATA_DIR, "custom-jobs", `${userId}.json`), []);
+  const due = reminderItems([...rows, ...own], prefs, apps, digest, today);
+  if (due.length) {
+    await deliver(userId, digest, reminderEmail(digest.email, due, SITE_URL, unsubscribe),
+      (current) => recordReminded(current, due), due.length === 1 ? "1 reminder" : `${due.length} reminders`);
+  }
+}
+
+console.log(`digest emails: ${sent} sent, ${failures} failed`);
 process.exit(failures ? 1 : 0);

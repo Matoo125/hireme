@@ -2,14 +2,14 @@
 // reading the jobs CSV produced by scrape_80000hours_jobs.py.
 
 import path from "path";
-import { mkdir, stat, unlink } from "fs/promises";
+import { mkdir, rm, stat, unlink } from "fs/promises";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { fetchPage, FetchError } from "./lib/fetch-page";
 import { parseRows } from "./lib/csv";
 import { handleV1 } from "./lib/api-v1";
 import {
-  cleanEdit, cvHash, findPage, readContent, readSettings, removeContent, renderNotFound, renderPage,
-  slugFromHost, slugOwner, slugProblem, writeContent, writeSettings, type PageSettings,
+  cleanEdit, cvHash, findPage, openToWorkPeople, readContent, renderPeople, searchPeople, readSettings, removeContent, renderNotFound, renderPage,
+  slugFromHost, slugOwner, slugProblem, writeContent, writeSettings, type PageOptions, type PageSettings,
 } from "./lib/pages";
 import {
   DEFAULT_MIN_FIT, feedItems, findFeed, newToken, readFeed, removeFeed, renderFeed, writeFeed,
@@ -19,6 +19,10 @@ import {
   confirmEmail, confirmLimit, emailProblem, findDigest, LINK_PAGE_HEADERS, linkPage, newDigest,
   readDigest, recordConfirmSend, removeDigest, sendEmail, writeDigest, type DigestSettings,
 } from "./lib/digest";
+import {
+  cleanMessage, contactConfirmEmail, findContactByToken, messageEmail, messageLimit, newContact,
+  readContact, recordMessage, removeContact, writeContact, type ContactSettings,
+} from "./lib/contact";
 
 const PORT = Number(process.env.PORT ?? 4020);
 const ROOT = import.meta.dir;
@@ -234,6 +238,64 @@ async function adviceStatus(userId: number) {
   };
 }
 
+// ── Application drafts ───────────────────────────────────────────────────────
+
+// application_draft.py writes a cover letter, answers to the posting's
+// questions and the CV's gaps for one job (data/drafts/<user>/<job>.json).
+// One run per user at a time; the last failure is kept to show the user.
+const DRAFTS_DIR = path.join(DATA_DIR, "drafts");
+const draftJobs = new Map<number, string>(); // user id → job id being drafted
+const draftErrors = new Map<string, string>(); // "<user>/<job>" → message
+const DRAFT_JOB_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+function startDraft(userId: number, jobId: string): void {
+  draftJobs.set(userId, jobId);
+  const key = `${userId}/${jobId}`;
+  draftErrors.delete(key);
+  const failed = "Drafting failed. Try again in a few minutes.";
+  try {
+    const proc = Bun.spawn(
+      ["python3", "application_draft.py", "--user", String(userId), "--job", jobId, "--jobs", CSV_PATH, "--data-dir", DATA_DIR, "--force"],
+      { cwd: REPO_DIR, stdout: "pipe", stderr: "pipe" }
+    );
+    Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited])
+      .then(([stdout, stderr, code]) => {
+        if (code !== 0) {
+          console.error(`Draft for user ${userId}, job ${jobId} failed: ${stderr.trim()}`);
+          draftErrors.set(key, failed);
+        } else if (stdout.includes("not found")) {
+          draftErrors.set(key, "This job is no longer listed, so there's nothing to draft from.");
+        } else if (stdout.includes("CV changed")) {
+          draftErrors.set(key, "Your CV changed while drafting. Try again.");
+        }
+      })
+      .finally(() => draftJobs.delete(userId));
+  } catch (exc) {
+    console.error(`Draft for user ${userId} could not start: ${exc}`);
+    draftErrors.set(key, failed);
+    draftJobs.delete(userId);
+  }
+}
+
+async function draftStatus(userId: number, jobId: string) {
+  const pdf = Bun.file(cvPdfPath(userId));
+  const file = Bun.file(path.join(DRAFTS_DIR, String(userId), `${jobId}.json`));
+  const saved = (await file.exists()) ? await file.json() : null;
+  let status: "no-cv" | "generating" | "busy" | "none" | "ready" | "stale";
+  if (!(await pdf.exists())) status = "no-cv";
+  else if (draftJobs.get(userId) === jobId) status = "generating";
+  else if (!saved) status = draftJobs.has(userId) ? "busy" : "none";
+  // "stale": made from an earlier CV, still shown until the user asks again.
+  else status = saved.cv === cvHash(new Uint8Array(await pdf.arrayBuffer())) ? "ready" : "stale";
+  return {
+    status,
+    error: draftErrors.get(`${userId}/${jobId}`) ?? null,
+    generatedAt: saved?.generatedAt ?? null,
+    fromPosting: saved?.fromPosting ?? false,
+    draft: status === "no-cv" ? null : (saved?.draft ?? null),
+  };
+}
+
 // ── Portfolio page helpers ───────────────────────────────────────────────────
 
 // pages_cv.py makes one user's content at a time. A CV uploaded while a run is
@@ -293,6 +355,7 @@ async function pageStatus(userId: number, settings: PageSettings | null) {
   return {
     enabled: settings?.enabled ?? false,
     slug: settings?.slug ?? "",
+    openToWork: settings?.openToWork ?? false,
     url: settings?.enabled ? `https://${settings.slug}.${PAGES_DOMAIN}/` : null,
     status,
     // Content to show and edit: there is some, and it's for a CV the user still has.
@@ -352,6 +415,7 @@ async function digestStatus(userId: number, digest: DigestSettings | null) {
     email: digest?.email ?? "",
     status: !digest ? "off" : digest.confirmed ? "on" : "pending",
     minFit: digest?.minFit ?? DEFAULT_MIN_FIT,
+    reminders: digest ? digest.reminders !== false : true,
     scored: (await readFitScores(userId)) !== null,
     available: RESEND_API_KEY !== "",
   };
@@ -397,10 +461,89 @@ async function serveDigestLink(kind: "confirm" | "unsubscribe", token: string, r
   return page(`Stop sending job digests to ${found.digest.email}?`, 200, { action, label: "Unsubscribe" });
 }
 
+// Contact form posts per visitor IP (behind Caddy: X-Forwarded-For), in memory.
+const CONTACT_POSTS_PER_HOUR = 5;
+const contactPosts = new Map<string, number[]>();
+
+function visitorLimited(ip: string, now: number): boolean {
+  const recent = (contactPosts.get(ip) ?? []).filter((t) => now - t < 3_600_000);
+  contactPosts.set(ip, recent);
+  if (recent.length >= CONTACT_POSTS_PER_HOUR) return true;
+  recent.push(now);
+  return false;
+}
+
 async function servePage(slug: string, req: Request): Promise<Response> {
-  const page = new URL(req.url).pathname === "/" ? await findPage(DATA_DIR, slug) : null;
+  const pathname = new URL(req.url).pathname;
+  const isPost = pathname === "/contact" && req.method === "POST";
+  const page = (pathname === "/" && !isPost) || isPost ? await findPage(DATA_DIR, slug) : null;
   if (!page) return new Response(renderNotFound(), { status: 404, headers: PAGE_HEADERS });
-  return new Response(renderPage(page.content, slug), { headers: PAGE_HEADERS });
+
+  const contact = await readContact(DATA_DIR, page.userId);
+  const contactable = Boolean(contact?.confirmed && RESEND_API_KEY);
+  const headers = contactable
+    ? { ...PAGE_HEADERS, "Content-Security-Policy": PAGE_HEADERS["Content-Security-Policy"].replace("form-action 'none'", "form-action 'self'") }
+    : PAGE_HEADERS;
+  const render = (contactResult?: PageOptions["contactResult"], status = 200) =>
+    new Response(renderPage(page.content, slug, { openToWork: page.settings.openToWork, contact: contactable, contactResult }), {
+      status,
+      headers: isPost ? { ...headers, "Cache-Control": "no-store" } : headers,
+    });
+  if (!isPost) return render();
+  if (!contactable) return new Response(renderNotFound(), { status: 404, headers: PAGE_HEADERS });
+
+  const form = await req.formData().catch(() => new FormData());
+  const values = Object.fromEntries(["name", "email", "message"].map((k) => [k, String(form.get(k) ?? "")]));
+  const msg = cleanMessage(form);
+  if ("error" in msg) return msg.error === "spam" ? render({ sent: true }) : render({ error: msg.error, values }, 400);
+  const now = Date.now();
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "unknown";
+  if (visitorLimited(ip, now)) return render({ error: "Too many messages from you; try again in an hour", values }, 429);
+  const limit = messageLimit(contact!, now);
+  if (limit) return render({ error: limit, values }, 429);
+  try {
+    await sendEmail(messageEmail(contact!.email, msg, `https://${slug}.${PAGES_DOMAIN}/`, SITE_URL), {
+      apiKey: RESEND_API_KEY, from: DIGEST_FROM, url: process.env.RESEND_API_URL,
+    });
+  } catch (err) {
+    console.error(`Contact email failed: ${err instanceof Error ? err.message : err}`);
+    return render({ error: "Couldn't send your message; try again later", values }, 502);
+  }
+  await writeContact(DATA_DIR, page.userId, recordMessage(contact!, now));
+  return render({ sent: true });
+}
+
+/** /people: published pages of users open to work, searchable. */
+async function servePeople(url: URL): Promise<Response> {
+  const query = (url.searchParams.get("q") ?? "").trim().slice(0, 100);
+  const people = await openToWorkPeople(DATA_DIR);
+  return new Response(renderPeople(searchPeople(people, query), query, people.length, PAGES_DOMAIN, SITE_URL), {
+    headers: { ...PAGE_HEADERS, "Content-Security-Policy": PAGE_HEADERS["Content-Security-Policy"].replace("form-action 'none'", "form-action 'self'") },
+  });
+}
+
+function contactStatus(contact: ContactSettings | null) {
+  return {
+    email: contact?.email ?? "",
+    status: !contact ? "off" : contact.confirmed ? "on" : "pending",
+    available: RESEND_API_KEY !== "",
+  };
+}
+
+/** /contact/confirm/<token>: a button on GET (mail scanners follow links), the change on POST. */
+async function serveContactConfirm(token: string, req: Request): Promise<Response> {
+  const page = (message: string, status = 200, button?: { action: string; label: string }) =>
+    new Response(linkPage(message, SITE_URL, button), { status, headers: LINK_PAGE_HEADERS });
+  const found = await findContactByToken(DATA_DIR, token);
+  if (!found) return page("This link has expired. Turn messages on again from Hireme to get a new one.", 404);
+  if (req.method === "POST") {
+    if (!found.contact.confirmed) {
+      await writeContact(DATA_DIR, found.userId, { ...found.contact, confirmed: true, confirmedAt: new Date().toISOString() });
+    }
+    return page(`Confirmed. Messages from your page will go to ${found.contact.email}.`);
+  }
+  if (found.contact.confirmed) return page(`${found.contact.email} is already confirmed.`);
+  return page(`Send messages from your Hireme page to ${found.contact.email}?`, 200, { action: `/contact/confirm/${token}`, label: "Confirm" });
 }
 
 // ── Preferences helpers ──────────────────────────────────────────────────────
@@ -568,6 +711,56 @@ Bun.serve({
     // ── Portfolio pages: <slug>.hireme.sk ──────────────────────────────────
     const pageSlug = slugFromHost(req.headers.get("host"), PAGES_DOMAIN);
     if (pageSlug) return servePage(pageSlug, req);
+
+    if (url.pathname === "/people" && req.method === "GET") return servePeople(url);
+
+    const contactLink = url.pathname.match(/^\/contact\/confirm\/([^/]+)$/);
+    if (contactLink) {
+      if (req.method !== "GET" && req.method !== "POST") return new Response("Method not allowed", { status: 405 });
+      return serveContactConfirm(contactLink[1], req);
+    }
+
+    // GET → {email, status: off|pending|on, available}. PUT {email}: send a
+    // confirmation link; messages go there once confirmed. DELETE: turn off.
+    if (url.pathname === "/api/page/contact") {
+      let user: { id: number; username: string | null };
+      try {
+        user = await verifyToken(req.headers.get("authorization"));
+      } catch {
+        return Response.json({ error: "unauthorized" }, { status: 401 });
+      }
+      const current = await readContact(DATA_DIR, user.id);
+      if (req.method === "GET") return Response.json(contactStatus(current));
+      if (req.method === "DELETE") {
+        await removeContact(DATA_DIR, user.id);
+        return Response.json(contactStatus(null));
+      }
+      if (req.method === "PUT") {
+        if (!RESEND_API_KEY) return Response.json({ error: "Email isn't set up on this server" }, { status: 503 });
+        const body = await req.json().catch(() => null);
+        const email = typeof body?.email === "string" ? body.email.trim() : "";
+        const problem = emailProblem(email);
+        if (problem) return Response.json({ error: problem }, { status: 400 });
+        const sameAddress = current?.email.toLowerCase() === email.toLowerCase();
+        if (sameAddress && current?.confirmed) return Response.json(contactStatus(current));
+        let contact = sameAddress && current ? current : newContact(email, current, new Date());
+        const now = Date.now();
+        const limit = confirmLimit(contact, now);
+        if (limit) return Response.json({ error: limit }, { status: 429 });
+        try {
+          await sendEmail(contactConfirmEmail(email, `${SITE_URL}/contact/confirm/${contact.confirmToken}`, SITE_URL), {
+            apiKey: RESEND_API_KEY, from: DIGEST_FROM, url: process.env.RESEND_API_URL,
+          });
+        } catch (err) {
+          console.error(`Contact confirmation email failed: ${err instanceof Error ? err.message : err}`);
+          return Response.json({ error: "Could not send the confirmation email; try again later" }, { status: 502 });
+        }
+        contact = recordConfirmSend(contact, now);
+        await writeContact(DATA_DIR, user.id, contact);
+        return Response.json(contactStatus(contact));
+      }
+      return new Response("Method not allowed", { status: 405 });
+    }
 
     // ── Jobs API ───────────────────────────────────────────────────────────
     if (url.pathname === "/api/jobs") {
@@ -742,6 +935,8 @@ Bun.serve({
         pageErrors.delete(user.id);
         // So was the advice, which quotes it.
         try { await unlink(path.join(ADVICE_DIR, `${user.id}.json`)); } catch {}
+        // And the application drafts.
+        await rm(path.join(DRAFTS_DIR, String(user.id)), { recursive: true, force: true });
         return Response.json({ ok: true });
       }
 
@@ -825,6 +1020,26 @@ Bun.serve({
         "rejected",
         "withdrawn",
       ];
+
+      // GET /api/applications/:jobId/draft → {status, error, generatedAt, fromPosting, draft}
+      // POST: draft (again) from the CV; one job per user at a time.
+      const draftFor = url.pathname.match(/^\/api\/applications\/([^/]+)\/draft$/)?.[1];
+      if (draftFor !== undefined) {
+        if (!DRAFT_JOB_ID.test(draftFor)) return Response.json({ error: "Unknown job" }, { status: 404 });
+        if (req.method === "GET") return Response.json(await draftStatus(user.id, draftFor));
+        if (req.method === "POST") {
+          if (!(await Bun.file(cvPdfPath(user.id)).exists())) {
+            return Response.json({ error: "Upload a CV first" }, { status: 400 });
+          }
+          const running = draftJobs.get(user.id);
+          if (running && running !== draftFor) {
+            return Response.json({ error: "Another draft is being written; try again in a minute" }, { status: 409 });
+          }
+          if (!running) startDraft(user.id, draftFor);
+          return Response.json(await draftStatus(user.id, draftFor));
+        }
+        return new Response("Method not allowed", { status: 405 });
+      }
 
       const jobId = url.pathname.slice("/api/applications/".length);
 
@@ -988,11 +1203,15 @@ Bun.serve({
         return Response.json(await pageStatus(user.id, await readSettings(DATA_DIR, user.id)));
       }
 
-      // PUT {enabled, slug?}: turn the page on or off, optionally choosing its address.
+      // PUT {enabled, slug?, openToWork?}: turn the page on or off, optionally choosing its
+      // address and whether it says the user is open to work.
       if (req.method === "PUT") {
         const body = await req.json().catch(() => null);
         if (typeof body?.enabled !== "boolean") {
           return Response.json({ error: "enabled must be true or false" }, { status: 400 });
+        }
+        if (body.openToWork !== undefined && typeof body.openToWork !== "boolean") {
+          return Response.json({ error: "openToWork must be true or false" }, { status: 400 });
         }
         const current = await readSettings(DATA_DIR, user.id);
         const slug = typeof body.slug === "string" ? body.slug.trim().toLowerCase() : (current?.slug ?? "");
@@ -1007,7 +1226,9 @@ Bun.serve({
             return Response.json({ error: "That address is taken" }, { status: 409 });
           }
         }
-        const settings: PageSettings = { enabled: body.enabled, slug, updatedAt: new Date().toISOString() };
+        const settings: PageSettings = {
+          enabled: body.enabled, slug, openToWork: body.openToWork ?? current?.openToWork ?? false, updatedAt: new Date().toISOString(),
+        };
         await writeSettings(DATA_DIR, user.id, settings);
         if (settings.enabled && (await Bun.file(cvPdfPath(user.id)).exists())) startPageContent(user.id);
         return Response.json(await pageStatus(user.id, settings));
@@ -1103,6 +1324,13 @@ Bun.serve({
       if (req.method === "PUT") {
         if (!RESEND_API_KEY) return Response.json({ error: "Email digests aren't set up on this server" }, { status: 503 });
         const body = await req.json().catch(() => null);
+        // {reminders} alone: turn deadline reminders on or off, keeping the address.
+        if (typeof body?.reminders === "boolean" && body.email === undefined) {
+          if (!current) return Response.json({ error: "Turn the digest on first" }, { status: 400 });
+          const updated = { ...current, reminders: body.reminders };
+          await writeDigest(DATA_DIR, user.id, updated);
+          return Response.json(await digestStatus(user.id, updated));
+        }
         const email = typeof body?.email === "string" ? body.email.trim() : "";
         const problem = emailProblem(email);
         if (problem) return Response.json({ error: problem }, { status: 400 });

@@ -91,6 +91,7 @@ function updateAuthUI() {
     addJobSection.hidden = false;
     loadCvInfo();
     loadPageInfo();
+    loadContactInfo();
     loadFeedInfo();
     loadDigestInfo();
   } else {
@@ -324,6 +325,7 @@ function showPage(page) {
   const pageInfo = document.getElementById("pageInfo");
 
   pageEnabled.checked = page.enabled;
+  document.getElementById("pageOpenToWork").checked = page.openToWork;
   if (!pageSlug.matches(":focus")) pageSlug.value = page.slug;
   pageInfo.className = page.error ? "cv-status cv-status--error" : "cv-status";
   pageInfo.hidden = false;
@@ -367,6 +369,45 @@ function showPageError(message) {
   pageInfo.className = "cv-status cv-status--error";
 }
 
+const CONTACT_STATUS_TEXT = {
+  off: "Visitors can write to you from a form on your page. Your address is never shown.",
+  pending: "Check your inbox and confirm the address. The form appears on your page once you do.",
+  on: "Your page has a contact form. Messages are emailed to this address; it's never shown.",
+};
+
+function showContact(contact, error) {
+  const info = document.getElementById("contactInfo");
+  const email = document.getElementById("contactEmail");
+  if (contact) {
+    if (!email.matches(":focus")) email.value = contact.email;
+    document.getElementById("contactOff").hidden = contact.status === "off";
+    if (!contact.available) error = "Messages aren't set up on this server.";
+  }
+  info.className = error ? "cv-status cv-status--error" : "cv-status";
+  info.textContent = error || CONTACT_STATUS_TEXT[contact?.status] || "";
+}
+
+async function contactRequest(method, body) {
+  try {
+    const jwt = await getJwt();
+    const res = await fetch("/api/page/contact", {
+      method,
+      headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Something went wrong");
+    showContact(data);
+  } catch (err) {
+    if (err.message === "Session expired") logout();
+    else showContact(null, err.message);
+  }
+}
+
+function loadContactInfo() {
+  contactRequest("GET");
+}
+
 async function loadPageInfo() {
   try {
     const jwt = await getJwt();
@@ -392,7 +433,11 @@ async function savePage(e) {
         Authorization: `Bearer ${jwt}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ enabled: pageEnabled.checked, slug: pageSlug.value.trim() }),
+      body: JSON.stringify({
+        enabled: pageEnabled.checked,
+        slug: pageSlug.value.trim(),
+        openToWork: document.getElementById("pageOpenToWork").checked,
+      }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || "Save failed");
@@ -440,10 +485,10 @@ function editorItem(list, item) {
   const box = el("div", "page-editor-item");
   for (const [field, label, kind] of list.fields) box.append(editorField(field, label, item[field], kind));
   const tools = el("div", "page-editor-tools");
-  const up = el("button", "cv-action page-editor-up", "Move up");
+  const up = el("button", "btn btn--link page-editor-up", "Move up");
   up.type = "button";
   up.addEventListener("click", () => box.previousElementSibling && box.parentNode.insertBefore(box, box.previousElementSibling));
-  const remove = el("button", "cv-action cv-action--danger", "Remove");
+  const remove = el("button", "btn btn--link btn--danger", "Remove");
   remove.type = "button";
   remove.addEventListener("click", () => box.remove());
   tools.append(up, remove);
@@ -467,7 +512,7 @@ function fillEditor(content) {
     items.dataset.list = list.key;
     items.style.setProperty("--columns", list.columns ?? 2);
     for (const item of content[list.key] ?? []) items.append(editorItem(list, item));
-    const add = el("button", "cv-action", list.add);
+    const add = el("button", "btn btn--link", list.add);
     add.type = "button";
     add.addEventListener("click", () => items.append(editorItem(list, {})));
     fields.append(el("h4", "", list.title), items, add);
@@ -616,6 +661,8 @@ function showDigest(digest) {
   const info = document.getElementById("digestInfo");
   if (!input.matches(":focus")) input.value = digest.email;
   document.getElementById("digestStop").hidden = digest.status === "off";
+  document.getElementById("remindersRow").hidden = digest.status === "off" || !digest.available;
+  document.getElementById("digestReminders").checked = digest.reminders;
   info.className = "cv-status";
   info.hidden = false;
   if (!digest.available) {
@@ -688,6 +735,15 @@ document.getElementById("cvFile").addEventListener("change", (e) => {
   document.getElementById("cvUploadBtn").disabled = !e.target.files.length;
 });
 document.getElementById("pageEnabled").addEventListener("change", savePage);
+document.getElementById("pageOpenToWork").addEventListener("change", savePage);
+document.getElementById("contactForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  contactRequest("PUT", { email: document.getElementById("contactEmail").value.trim() });
+});
+document.getElementById("contactOff").addEventListener("click", () => {
+  document.getElementById("contactEmail").value = "";
+  contactRequest("DELETE");
+});
 document.getElementById("pageForm").addEventListener("submit", savePage);
 document.getElementById("pageEditBtn").addEventListener("click", openPageEditor);
 document.getElementById("pageRemakeBtn").addEventListener("click", remakePage);
@@ -697,6 +753,14 @@ document.getElementById("pageEditCancel").addEventListener("click", () => {
 });
 document.getElementById("feedEnabled").addEventListener("change", (e) => saveFeed({ enabled: e.target.checked }));
 document.getElementById("digestForm").addEventListener("submit", saveDigest);
+document.getElementById("digestReminders").addEventListener("change", async (e) => {
+  try {
+    showDigest(await digestRequest("PUT", { reminders: e.target.checked }));
+  } catch (err) {
+    if (err.message === "Session expired") logout();
+    else showDigestError(err.message);
+  }
+});
 document.getElementById("digestStop").addEventListener("click", stopDigest);
 document.getElementById("feedCopy").addEventListener("click", copyFeedUrl);
 document.getElementById("feedRotate").addEventListener("click", () => {
@@ -982,6 +1046,104 @@ function attachTextField(textarea, jobId, key, toolbar) {
     if (!liveFields.has(field)) return void created.destroy();
     editor = created;
   }).catch((err) => console.warn("Rich-text editor unavailable, using plain text:", err));
+}
+
+// ── Application drafts ───────────────────────────────────────────────────────
+//
+// application_draft.py writes a cover letter, answers to the posting's
+// questions and what the CV doesn't show, from the CV and the full posting.
+// The draft is shown beside the letter; "Use this letter" copies it in.
+
+const DRAFT_STATUS_TEXT = {
+  "no-cv": "Upload a CV to draft applications from it.",
+  generating: "Drafting from your CV and the posting… (about a minute)",
+  busy: "Another draft is being written; try again in a minute.",
+  stale: "Drafted from an earlier CV. Draft again to use the new one.",
+};
+
+function draftPanel(jobId) {
+  const box = el("div", "draft-panel");
+  const head = el("div", "draft-head");
+  const button = el("button", "btn btn--small", "Draft application");
+  button.type = "button";
+  const info = el("p", "cv-status");
+  head.append(button, info);
+  const body = el("div", "draft-body");
+  box.append(head, body);
+  let polls = 0;
+
+  const show = (data) => {
+    const busy = data.status === "generating";
+    button.disabled = busy || data.status === "no-cv";
+    button.textContent = data.draft ? "Draft again" : "Draft application";
+    info.className = data.error ? "cv-status cv-status--error" : "cv-status";
+    info.textContent = data.error || DRAFT_STATUS_TEXT[data.status] || "";
+    body.replaceChildren();
+    if (data.draft && !busy) body.append(...draftContent(jobId, data));
+    if (busy && polls++ < 40) setTimeout(() => request("GET"), 3000);
+  };
+
+  const request = async (method) => {
+    try {
+      const jwt = await getJwt();
+      const res = await fetch(`/api/applications/${encodeURIComponent(jobId)}/draft`, {
+        method,
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Drafting failed");
+      if (box.isConnected || method === "GET") show(data);
+    } catch (err) {
+      if (err.message === "Session expired") return logout();
+      info.className = "cv-status cv-status--error";
+      info.textContent = err.message;
+    }
+  };
+
+  button.addEventListener("click", () => {
+    polls = 0;
+    request("POST");
+  });
+  request("GET");
+  return box;
+}
+
+function draftContent(jobId, data) {
+  const { draft } = data;
+  const out = [];
+
+  const letterHead = el("div", "draft-section-head");
+  letterHead.append(el("h4", "", "Drafted letter"));
+  const use = el("button", "btn btn--primary btn--small", "Use this letter");
+  use.type = "button";
+  use.addEventListener("click", () => {
+    const current = applications.get(jobId)?.motivationLetter?.trim();
+    if (current && !confirm("Replace your motivation letter with this draft?")) return;
+    closeLiveFields();
+    updateApplication(jobId, "motivationLetter", draft.letter);
+    render();
+  });
+  letterHead.append(use);
+  out.push(letterHead, el("div", "draft-letter", draft.letter));
+
+  if (draft.answers?.length) {
+    out.push(el("h4", "", "Questions the posting asks"));
+    for (const a of draft.answers) {
+      const item = el("div", "draft-answer");
+      item.append(el("p", "draft-question", a.question), el("p", "draft-text", a.answer));
+      out.push(item);
+    }
+  }
+  if (draft.gaps?.length) {
+    out.push(el("h4", "", "What your CV doesn't show"));
+    const list = el("ul", "draft-gaps");
+    for (const g of draft.gaps) list.append(el("li", "", g));
+    out.push(list);
+  }
+  out.push(el("p", "app-meta",
+    `Drafted ${new Date(data.generatedAt).toLocaleString()} from your CV and ${data.fromPosting ? "the full posting" : "the listing"}. ` +
+    "Check every claim, and fill in anything in [brackets]."));
+  return out;
 }
 
 async function saveApplication(jobId, data) {
@@ -1713,6 +1875,8 @@ function jobCard(job) {
     letterArea.setAttribute("aria-label", "Motivation letter");
     panel.appendChild(letterArea);
     attachTextField(letterArea, job.id, "motivationLetter", LETTER_TOOLBAR);
+
+    if (isLoggedIn()) panel.appendChild(draftPanel(job.id));
 
     // Tracked-since timestamp
     if (appData.createdAt) {

@@ -7,17 +7,19 @@
   <!-- The notes and letter editor's own styles (bundled by server.ts), before
        ours so style.css can adjust them. -->
   <link rel="stylesheet" href="/editor.css" />
+  <link rel="stylesheet" href="/tokens.css" />
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
   <header>
     <div class="header-top">
       <h1>Hireme.sk</h1>
+      <a href="/people" class="header-link">People open to work</a>
       <div id="authControls" class="auth-controls">
-        <button id="loginBtn" class="auth-btn" hidden>Login</button>
+        <button id="loginBtn" class="btn btn--primary" hidden>Login</button>
         <span id="userInfo" class="user-info" hidden>
           <span id="userName"></span>
-          <button id="logoutBtn" class="auth-btn auth-btn--small">Logout</button>
+          <button id="logoutBtn" class="btn btn--primary btn--small">Logout</button>
         </span>
       </div>
     </div>
@@ -27,18 +29,18 @@
       <div id="cvInfo" class="cv-info" hidden>
         <span id="cvFilename"></span>
         <span id="cvDate" class="cv-date"></span>
-        <a id="cvDownload" class="cv-action" href="#">Download</a>
-        <button id="cvDelete" class="cv-action cv-action--danger">Delete</button>
+        <a id="cvDownload" class="btn btn--link" href="#">Download</a>
+        <button id="cvDelete" class="btn btn--link btn--danger">Delete</button>
       </div>
       <div id="cvUpload" class="cv-upload">
         <label class="cv-file-label">
           <input id="cvFile" type="file" accept=".pdf" />
         </label>
-        <button id="cvUploadBtn" class="auth-btn auth-btn--small" disabled>Upload CV</button>
+        <button id="cvUploadBtn" class="btn btn--primary btn--small" disabled>Upload CV</button>
       </div>
       <p id="cvStatus" class="cv-status" hidden></p>
       <div id="cvAdvice" class="cv-advice" hidden>
-        <button id="cvAdviceBtn" class="auth-btn auth-btn--small">Suggest improvements</button>
+        <button id="cvAdviceBtn" class="btn btn--primary btn--small">Suggest improvements</button>
         <span class="cv-date">Compares your CV with the jobs you liked, track or fit best.</span>
         <p id="cvAdviceInfo" class="cv-status" hidden></p>
         <div id="cvAdviceBody" hidden></div>
@@ -50,25 +52,35 @@
         <input id="pageEnabled" type="checkbox" />
         Publish a page built from my CV
       </label>
+      <label class="cv-page-toggle">
+        <input id="pageOpenToWork" type="checkbox" />
+        I'm open to work (shows an "Open to work" badge on my page)
+      </label>
       <form id="pageForm" class="add-job-form">
         <input id="pageSlug" type="text" placeholder="your-name" maxlength="40" autocomplete="off" />
         <span>.hireme.sk</span>
-        <button type="submit" class="auth-btn auth-btn--small">Save address</button>
+        <button type="submit" class="btn btn--primary btn--small">Save address</button>
       </form>
       <p id="pageInfo" class="cv-status" hidden></p>
       <div id="pageActions" class="cv-info page-actions" hidden>
-        <button id="pageEditBtn" type="button" class="cv-action">Edit page</button>
-        <button id="pageRemakeBtn" type="button" class="cv-action">Remake from CV</button>
+        <button id="pageEditBtn" type="button" class="btn btn--link">Edit page</button>
+        <button id="pageRemakeBtn" type="button" class="btn btn--link">Remake from CV</button>
       </div>
       <form id="pageEditor" class="page-editor" hidden>
         <p class="cv-status page-editor-note">Changes go live when you save. Your page shows only what's here: leave out anything you don't want public.</p>
         <div id="pageEditorFields"></div>
         <div class="page-editor-buttons">
-          <button type="submit" class="auth-btn auth-btn--small">Save page</button>
-          <button id="pageEditCancel" type="button" class="cv-action">Cancel</button>
+          <button type="submit" class="btn btn--primary btn--small">Save page</button>
+          <button id="pageEditCancel" type="button" class="btn btn--link">Cancel</button>
         </div>
         <p id="pageEditorInfo" class="cv-status" hidden></p>
       </form>
+      <form id="contactForm" class="add-job-form">
+        <input id="contactEmail" type="email" placeholder="Where messages from your page go" maxlength="254" autocomplete="email" />
+        <button type="submit" class="btn btn--primary btn--small">Let people message me</button>
+        <button id="contactOff" type="button" class="btn btn--link" hidden>Turn off</button>
+      </form>
+      <p id="contactInfo" class="cv-status">Visitors can write to you from a form on your page. Your address is never shown.</p>
     </div>
 
     <div id="feedSection" class="cv-section" hidden>
@@ -79,8 +91,8 @@
       <p id="feedInfo" class="cv-status" hidden></p>
       <div id="feedLinkRow" class="add-job-form" hidden>
         <input id="feedUrl" type="text" readonly />
-        <button id="feedCopy" type="button" class="auth-btn auth-btn--small">Copy link</button>
-        <button id="feedRotate" type="button" class="cv-action">New link</button>
+        <button id="feedCopy" type="button" class="btn btn--primary btn--small">Copy link</button>
+        <button id="feedRotate" type="button" class="btn btn--link">New link</button>
       </div>
     </div>
 
@@ -88,17 +100,21 @@
       <form id="digestForm" class="add-job-form">
         <label for="digestEmail">Email me new jobs that fit my CV:</label>
         <input id="digestEmail" type="email" placeholder="you@example.com" autocomplete="email" required />
-        <button type="submit" class="auth-btn auth-btn--small">Email me</button>
-        <button id="digestStop" type="button" class="cv-action cv-action--danger" hidden>Stop emails</button>
+        <button type="submit" class="btn btn--primary btn--small">Email me</button>
+        <button id="digestStop" type="button" class="btn btn--link btn--danger" hidden>Stop emails</button>
       </form>
       <p id="digestInfo" class="cv-status" hidden></p>
+      <label id="remindersRow" class="cv-page-toggle" hidden>
+        <input id="digestReminders" type="checkbox" />
+        Also remind me 3 days before a job I liked or track closes, if I haven't applied yet
+      </label>
     </div>
 
     <div id="addJobSection" class="cv-section" hidden>
       <form id="addJobForm" class="add-job-form">
         <input id="addJobLink" type="url" placeholder="Paste a job link…" required />
         <input id="addJobTitle" type="text" placeholder="Title (optional, auto-detected if left blank)" />
-        <button type="submit" class="auth-btn auth-btn--small">Add job</button>
+        <button type="submit" class="btn btn--primary btn--small">Add job</button>
       </form>
       <p id="addJobStatus" class="cv-status" hidden></p>
     </div>
@@ -138,10 +154,10 @@
     <div class="count-row">
       <p id="count" class="count"></p>
       <span class="count-actions">
-        <button id="europeToggle" type="button" class="auth-btn auth-btn--small auth-btn--quiet" hidden
+        <button id="europeToggle" type="button" class="btn btn--small" hidden
           title="Jobs whose posting requires living or working outside Europe, as Claude read it">Show not open to Europe</button>
-        <button id="clearGridFilters" type="button" class="auth-btn auth-btn--small auth-btn--quiet" hidden>Clear column filters</button>
-        <button id="downloadCsv" type="button" class="auth-btn auth-btn--small" hidden>Download CSV</button>
+        <button id="clearGridFilters" type="button" class="btn btn--small" hidden>Clear column filters</button>
+        <button id="downloadCsv" type="button" class="btn btn--primary btn--small" hidden>Download CSV</button>
       </span>
     </div>
   </header>

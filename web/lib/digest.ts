@@ -22,6 +22,8 @@ export interface DigestSettings {
   confirmSends: number[]; // when confirmation emails went out (ms), last 24 hours only
   lastSentAt: string | null;
   sentIds: string[]; // jobs already emailed, newest last
+  reminders?: boolean; // deadline reminders (lib/reminders.ts); missing means on
+  remindedKeys?: string[]; // "<job id>@<close date>" already reminded, newest last
 }
 
 // &#39; rather than &apos;, which older mail clients show as is.
@@ -101,18 +103,22 @@ export function newDigest(email: string, minFit: number, previous: DigestSetting
     confirmSends: previous?.confirmSends ?? [],
     lastSentAt: previous?.lastSentAt ?? null,
     sentIds: previous?.sentIds ?? [],
+    reminders: previous?.reminders ?? true,
+    remindedKeys: previous?.remindedKeys ?? [],
   };
 }
 
 /** Why a confirmation email can't go out now (too soon, too many today), or null. */
-export function confirmLimit(digest: DigestSettings, now: number): string | null {
+export function confirmLimit(digest: { confirmSends: number[] }, now: number): string | null {
   const recent = digest.confirmSends.filter((t) => now - t < 86_400_000);
   if (recent.length >= MAX_CONFIRMS_PER_DAY) return "Too many confirmation emails today; try again tomorrow";
   if (recent.length && now - recent[recent.length - 1] < CONFIRM_GAP_MS) return "Wait a minute before sending another";
   return null;
 }
 
-export function recordConfirmSend(digest: DigestSettings, now: number): DigestSettings {
+export function recordConfirmSend<T extends { confirmSends: number[]; confirmSentAt: string | null }>(
+  digest: T, now: number
+): T {
   return {
     ...digest,
     confirmSentAt: new Date(now).toISOString(),
@@ -150,6 +156,7 @@ export interface Email {
   subject: string;
   html: string;
   text: string;
+  reply_to?: string;
   headers?: Record<string, string>;
 }
 
