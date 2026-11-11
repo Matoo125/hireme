@@ -52,7 +52,7 @@ await wait(400);
 check("a script link is refused, editor stays open", !editor.hidden
   && editorInfo.classList.contains("cv-status--error") && editorInfo.textContent.includes("Link 2"), editorInfo.textContent);
 
-newLink.querySelector(".cv-action--danger").click(); // "Remove"
+newLink.querySelector(".btn--link.btn--danger").click(); // "Remove"
 editor.requestSubmit();
 await wait(400);
 const saved = await content();

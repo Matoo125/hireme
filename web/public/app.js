@@ -485,10 +485,10 @@ function editorItem(list, item) {
   const box = el("div", "page-editor-item");
   for (const [field, label, kind] of list.fields) box.append(editorField(field, label, item[field], kind));
   const tools = el("div", "page-editor-tools");
-  const up = el("button", "cv-action page-editor-up", "Move up");
+  const up = el("button", "btn btn--link page-editor-up", "Move up");
   up.type = "button";
   up.addEventListener("click", () => box.previousElementSibling && box.parentNode.insertBefore(box, box.previousElementSibling));
-  const remove = el("button", "cv-action cv-action--danger", "Remove");
+  const remove = el("button", "btn btn--link btn--danger", "Remove");
   remove.type = "button";
   remove.addEventListener("click", () => box.remove());
   tools.append(up, remove);
@@ -512,7 +512,7 @@ function fillEditor(content) {
     items.dataset.list = list.key;
     items.style.setProperty("--columns", list.columns ?? 2);
     for (const item of content[list.key] ?? []) items.append(editorItem(list, item));
-    const add = el("button", "cv-action", list.add);
+    const add = el("button", "btn btn--link", list.add);
     add.type = "button";
     add.addEventListener("click", () => items.append(editorItem(list, {})));
     fields.append(el("h4", "", list.title), items, add);

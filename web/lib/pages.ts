@@ -6,6 +6,7 @@
 
 import { readdir, unlink } from "fs/promises";
 import path from "path";
+import TOKENS from "../public/tokens.css" with { type: "text" };
 
 export interface PageSettings {
   enabled: boolean;
@@ -256,36 +257,26 @@ const LANG_PATTERN = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
 const esc = (value: string) =>
   value.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-const STYLE = `
-  :root { color-scheme: light dark; --bg: #fdfcf9; --fg: #1d1d1b; --muted: #5d5b55; --line: #dcd8cf; --accent: #8a4b1f; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #161513; --fg: #ece9e1; --muted: #a6a195; --line: #3a3832; --accent: #e0a070; }
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.6 system-ui, sans-serif; }
-  main { max-width: 680px; margin: 0 auto; padding: 3rem 1rem 4rem; }
-  h1 { font-size: 2.2rem; margin: 0 0 .25rem; line-height: 1.2; }
-  h2 { font-size: 1.2rem; margin: 2.5rem 0 1rem; padding-bottom: .4rem; border-bottom: 1px solid var(--line); }
-  h3 { font-size: 1rem; margin: 0; }
-  p, li { color: var(--fg); }
-  .headline { color: var(--muted); font-size: 1.1rem; margin: 0 0 1rem; }
-  .meta { color: var(--muted); font-size: .9rem; }
-  .links a, .item a { color: var(--accent); margin-right: 1rem; }
-  .item { margin-bottom: 1.5rem; }
+// The design system (public/tokens.css) inlined, plus reading-page layout:
+// pages' CSP allows no stylesheet links.
+const STYLE = TOKENS + `
+  body { font-size: 17px; line-height: 1.6; }
+  main { max-width: var(--reading-width); margin: 0 auto; padding: 3rem var(--space-4) 4rem; }
+  h1 { font-size: var(--text-2xl); margin: 0 0 var(--space-1); line-height: 1.2; }
+  h2 { font-size: 1.2rem; margin: var(--space-10) 0 var(--space-4); padding-bottom: .4rem; border-bottom: 1px solid var(--border); }
+  h3 { font-size: var(--text-base); margin: 0; }
+  .headline { color: var(--muted); font-size: 1.1rem; margin: 0 0 var(--space-4); }
+  .meta { color: var(--muted); font-size: var(--text-md); }
+  .links a { margin-right: var(--space-4); }
+  .item { margin-bottom: var(--space-6); }
   ul { padding-left: 1.2rem; margin: .4rem 0 0; }
   .skills { display: flex; flex-wrap: wrap; gap: .4rem; list-style: none; padding: 0; }
-  .skills li { border: 1px solid var(--line); border-radius: 999px; padding: .1rem .7rem; font-size: .9rem; }
-  .open-to-work { display: inline-block; margin: 0 0 .6rem; padding: .15rem .8rem; border-radius: 999px; background: #1a7f37; color: #fff; font-size: .85rem; font-weight: 600; }
-  .notice { padding: .6rem .9rem; border: 1px solid var(--line); border-radius: 8px; }
-  .notice--error { border-color: #c0392b; }
-  form.contact { display: grid; gap: .8rem; }
-  form.contact label { display: grid; gap: .2rem; font-size: .95rem; }
+  .open-to-work { margin: 0 0 .6rem; }
+  form.contact { display: grid; gap: var(--space-3); }
   form.contact .hp { position: absolute; left: -9999px; }
-  input, textarea { font: inherit; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: .45rem .6rem; width: 100%; }
-  button { font: inherit; justify-self: start; padding: .45rem 1.1rem; border: 0; border-radius: 6px; background: var(--accent); color: var(--bg); cursor: pointer; }
-  form.search { display: flex; gap: .5rem; margin: 1.5rem 0 .5rem; }
-  h3 a { color: var(--accent); }
-  footer { margin-top: 3rem; color: var(--muted); font-size: .85rem; }
+  form.contact .btn { justify-self: start; }
+  form.search { display: flex; gap: var(--space-2); margin: var(--space-6) 0 var(--space-2); }
+  footer { margin-top: 3rem; color: var(--muted); font-size: var(--text-sm); }
 `;
 
 /** The full HTML document for a page. Every value is escaped, every link checked. */
@@ -329,7 +320,7 @@ export function renderPage(page: PageContent, slug: string, opts: PageOptions = 
   }).join("");
 
   const skills = c.skills.length
-    ? `<ul class="skills">${c.skills.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>`
+    ? `<ul class="skills">${c.skills.map((s) => `<li class="chip">${esc(s)}</li>`).join("")}</ul>`
     : "";
 
   return `<!doctype html>
@@ -344,7 +335,7 @@ export function renderPage(page: PageContent, slug: string, opts: PageOptions = 
 <body>
 <main>
   <h1>${esc(c.name)}</h1>
-  ${openToWork ? `<p class="open-to-work">Open to work</p>` : ""}
+  ${openToWork ? `<p class="open-to-work"><span class="badge badge--solid badge--success">Open to work</span></p>` : ""}
   ${c.headline ? `<p class="headline">${esc(c.headline)}</p>` : ""}
   ${links.length ? `<p class="links">${links.join("")}</p>` : ""}
   ${c.summary ? `<p>${esc(c.summary)}</p>` : ""}
@@ -362,17 +353,17 @@ export function renderPage(page: PageContent, slug: string, opts: PageOptions = 
 
 function contactForm(name: string, result: PageOptions["contactResult"]): string {
   if (result && "sent" in result) {
-    return `<h2 id="contact">Contact</h2>\n<p class="notice">Sent. ${esc(name)} will reply by email if they're interested.</p>`;
+    return `<h2 id="contact">Contact</h2>\n<p class="notice notice--success">Sent. ${esc(name)} will reply by email if they're interested.</p>`;
   }
   const v = result?.values ?? {};
   return `<h2 id="contact">Contact ${esc(name)}</h2>
   ${result ? `<p class="notice notice--error">${esc(result.error)}</p>` : ""}
   <form class="contact" method="post" action="/contact#contact">
-    <label>Your name <input name="name" maxlength="100" required value="${esc(v.name ?? "")}"></label>
-    <label>Your email <input name="email" type="email" maxlength="254" required value="${esc(v.email ?? "")}"></label>
-    <label>Message <textarea name="message" rows="6" minlength="10" maxlength="3000" required>${esc(v.message ?? "")}</textarea></label>
+    <label class="field">Your name <input class="input" name="name" maxlength="100" required value="${esc(v.name ?? "")}"></label>
+    <label class="field">Your email <input class="input" name="email" type="email" maxlength="254" required value="${esc(v.email ?? "")}"></label>
+    <label class="field">Message <textarea class="input" name="message" rows="6" minlength="10" maxlength="3000" required>${esc(v.message ?? "")}</textarea></label>
     <label class="hp" aria-hidden="true">Website <input name="website" tabindex="-1" autocomplete="off"></label>
-    <button type="submit">Send</button>
+    <button type="submit" class="btn btn--primary">Send</button>
     <p class="meta">Your message is emailed to them with your address to reply to. Their address isn't shown to you.</p>
   </form>`;
 }
@@ -413,10 +404,10 @@ export function searchPeople(people: Person[], query: string): Person[] {
 /** The /people listing: who's open to work, with a search box. */
 export function renderPeople(people: Person[], query: string, total: number, domain: string, site: string): string {
   const cards = people.map((p) => `
-    <div class="item">
+    <div class="item card">
       <h3><a href="https://${esc(p.slug)}.${esc(domain)}/">${esc(p.name)}</a></h3>
       ${p.headline ? `<div class="meta">${esc(p.headline)}</div>` : ""}
-      ${p.skills.length ? `<ul class="skills">${p.skills.slice(0, 12).map((s) => `<li>${esc(s)}</li>`).join("")}</ul>` : ""}
+      ${p.skills.length ? `<ul class="skills">${p.skills.slice(0, 12).map((s) => `<li class="chip">${esc(s)}</li>`).join("")}</ul>` : ""}
     </div>`).join("");
   const count = query
     ? `${people.length} of ${total} match “${esc(query)}”.`
@@ -435,8 +426,8 @@ export function renderPeople(people: Person[], query: string, total: number, dom
   <h1>Open to work</h1>
   <p class="headline">People on <a href="${esc(site)}">Hireme</a> looking for a job. Open a page to read more and get in touch.</p>
   <form class="search" method="get" action="/people">
-    <input name="q" type="search" placeholder="Skill, role or name" maxlength="100" value="${esc(query)}" aria-label="Search">
-    <button type="submit">Search</button>
+    <input class="input" name="q" type="search" placeholder="Skill, role or name" maxlength="100" value="${esc(query)}" aria-label="Search">
+    <button type="submit" class="btn btn--primary">Search</button>
   </form>
   <p class="meta">${count}</p>
   ${cards || (total ? "<p>No one matches. Try fewer words.</p>" : "<p>No one yet.</p>")}

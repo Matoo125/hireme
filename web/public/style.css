@@ -1,55 +1,29 @@
-:root {
-  --bg: #fafafa;
-  --fg: #1a1a1a;
-  --muted: #6b6b6b;
-  --border: #e3e3e3;
-  --card-bg: #ffffff;
-  --accent: #2a5aa8;
-  --chip-bg: #eef1f5;
-  --chip-fg: #34456b;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #15161a;
-    --fg: #e8e8e8;
-    --muted: #9a9a9a;
-    --border: #2b2c31;
-    --card-bg: #1c1d22;
-    --accent: #7fa8e0;
-    --chip-bg: #262a33;
-    --chip-fg: #b7c6e6;
-  }
-}
-
-* {
-  box-sizing: border-box;
-}
+/* Hireme board. Colors, type, space and components come from tokens.css. */
 
 body {
   margin: 0;
   padding: 2.5rem 1.25rem 4rem;
   background: var(--bg);
   color: var(--fg);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  line-height: 1.45;
+  font-family: var(--font-sans);
+  line-height: var(--leading);
 }
 
 header {
-  max-width: 720px;
+  max-width: var(--content-width);
   margin: 0 auto 2rem;
 }
 
 h1 {
-  font-size: 1.5rem;
+  font-size: var(--text-xl);
   margin: 0 0 0.25rem;
-  font-weight: 600;
+  font-weight: var(--weight-bold);
 }
 
 .subtitle {
   margin: 0 0 1.25rem;
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: var(--text-md);
 }
 
 .controls {
@@ -64,11 +38,11 @@ h1 {
 
 input,
 select {
-  font-size: 0.9rem;
+  font-size: var(--text-md);
   padding: 0.5rem 0.7rem;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--card-bg);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
   color: var(--fg);
 }
 
@@ -81,7 +55,7 @@ select:focus {
 .count {
   margin: 0.9rem 0 0;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
 }
 
 .chip-row {
@@ -95,19 +69,19 @@ select:focus {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  background: var(--chip-bg);
-  color: var(--chip-fg);
+  background: var(--accent-soft);
+  color: var(--accent-soft-fg);
   border: none;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0.25rem 0.65rem;
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
   cursor: pointer;
   line-height: 1.6;
 }
 
 .chip.active {
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 
 .chip.source-chip {
@@ -147,7 +121,7 @@ button.chip.source-chip {
 }
 
 main {
-  max-width: 720px;
+  max-width: var(--content-width);
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -155,9 +129,9 @@ main {
 }
 
 .job {
-  background: var(--card-bg);
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   padding: 1.1rem 1.25rem;
 }
 
@@ -193,9 +167,9 @@ main {
   background: transparent;
   border: 1px solid var(--border);
   color: var(--muted);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 0.25rem 0.55rem;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -207,7 +181,7 @@ main {
 .action-btn.like-btn.active {
   background: var(--accent);
   border-color: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 
 .action-btn.hide-btn.active {
@@ -225,8 +199,8 @@ main {
 }
 
 .job-title {
-  font-size: 1.05rem;
-  font-weight: 600;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
   margin: 0;
 }
 
@@ -241,7 +215,7 @@ main {
 
 .job-org {
   margin: 0.15rem 0 0;
-  font-size: 0.88rem;
+  font-size: var(--text-md);
   color: var(--muted);
 }
 
@@ -251,7 +225,7 @@ main {
 
 .job-fit {
   margin: 0.35rem 0 0;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   color: var(--muted);
 }
 
@@ -261,7 +235,7 @@ main {
   padding: 0 0.35em;
   border-radius: 0.6em;
   text-align: center;
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
   color: var(--fit-fg);
   background: var(--fit-bg);
@@ -270,19 +244,15 @@ main {
 .sheet--grid .jss_worksheet > tbody > tr > td.fit-cell {
   color: var(--fit-fg);
   background: var(--fit-bg);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
 }
 
 /* Shown only when "not open to Europe" jobs are let in. */
 .job-europe {
   margin: 0.35rem 0 0;
-  font-size: 0.85rem;
-  color: #a4372a;
-}
-
-@media (prefers-color-scheme: dark) {
-  .job-europe { color: #f09a8e; }
+  font-size: var(--text-sm);
+  color: var(--danger-fg);
 }
 
 /* "Probably not for you": the fold under the good matches. */
@@ -291,11 +261,11 @@ main {
   width: 100%;
   padding: 0.6rem 0.9rem;
   border: 1px dashed var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 0.9rem;
+  font-size: var(--text-md);
   text-align: left;
   cursor: pointer;
 }
@@ -309,24 +279,18 @@ main {
   padding: 0 0.45em;
   border-radius: 0.6em;
   background: var(--accent);
-  color: var(--card-bg);
-  font-size: 0.7rem;
-  font-weight: 600;
+  color: var(--on-accent);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
   vertical-align: middle;
 }
 
-.fit-high { --fit-fg: #1d6b34; --fit-bg: #dff3e4; }
-.fit-mid { --fit-fg: #7a5a00; --fit-bg: #fbf0cf; }
-.fit-low { --fit-fg: #6b6b6b; --fit-bg: #eeeeee; }
-
-@media (prefers-color-scheme: dark) {
-  .fit-high { --fit-fg: #8fd6a2; --fit-bg: #1f3a27; }
-  .fit-mid { --fit-fg: #e8c86a; --fit-bg: #3a3220; }
-  .fit-low { --fit-fg: #9a9a9a; --fit-bg: #2b2c31; }
-}
+.fit-high { --fit-fg: var(--success-fg); --fit-bg: var(--success-soft); }
+.fit-mid { --fit-fg: var(--warning-fg); --fit-bg: var(--warning-soft); }
+.fit-low { --fit-fg: var(--neutral-fg); --fit-bg: var(--neutral-soft); }
 
 .job-meta {
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
   color: var(--muted);
   white-space: nowrap;
 }
@@ -334,7 +298,7 @@ main {
 .job-salary {
   display: inline-block;
   margin-top: 0.6rem;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   font-weight: 500;
 }
 
@@ -344,7 +308,7 @@ main {
 
 .job-desc {
   margin: 0;
-  font-size: 0.88rem;
+  font-size: var(--text-md);
   color: var(--fg);
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -360,7 +324,7 @@ main {
   background: none;
   border: none;
   color: var(--accent);
-  font-size: 0.8rem;
+  font-size: var(--text-xs);
   cursor: pointer;
   padding: 0.3rem 0 0;
   display: block;
@@ -374,7 +338,7 @@ main {
 }
 
 .detail-toggles-label {
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
   color: var(--muted);
   align-self: center;
 }
@@ -398,30 +362,11 @@ main {
   gap: 0.5rem;
 }
 
-.auth-btn {
-  background: var(--accent);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  padding: 0.4rem 0.9rem;
-  font-size: 0.85rem;
-  cursor: pointer;
-}
-
-.auth-btn:hover {
-  opacity: 0.85;
-}
-
-.auth-btn--small {
-  padding: 0.25rem 0.6rem;
-  font-size: 0.78rem;
-}
-
 .user-info {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   color: var(--fg);
 }
 
@@ -431,8 +376,8 @@ main {
   margin-top: 1rem;
   padding: 0.9rem 1rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--card-bg);
+  border-radius: var(--radius-md);
+  background: var(--surface);
 }
 
 .cv-info {
@@ -441,26 +386,12 @@ main {
   gap: 0.6rem;
   flex-wrap: wrap;
   margin-bottom: 0.6rem;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
 }
 
 .cv-date {
   color: var(--muted);
-  font-size: 0.78rem;
-}
-
-.cv-action {
-  font-size: 0.78rem;
-  color: var(--accent);
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-  text-decoration: underline;
-}
-
-.cv-action--danger {
-  color: #c44;
+  font-size: var(--text-xs);
 }
 
 .cv-upload {
@@ -470,17 +401,17 @@ main {
 }
 
 .cv-upload input[type="file"] {
-  font-size: 0.82rem;
+  font-size: var(--text-sm);
 }
 
 .cv-status {
   margin: 0.4rem 0 0;
-  font-size: 0.82rem;
+  font-size: var(--text-sm);
   color: var(--muted);
 }
 
 .cv-status--error {
-  color: #c44;
+  color: var(--danger-fg);
 }
 
 .cv-advice {
@@ -491,19 +422,19 @@ main {
 
 .cv-advice-summary {
   margin: 0.6rem 0 0.4rem;
-  font-size: 0.88rem;
+  font-size: var(--text-md);
 }
 
 .cv-advice h4 {
   margin: 0.8rem 0 0.3rem;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
 }
 
 .cv-advice ul,
 .cv-advice ol {
   margin: 0;
   padding-left: 1.2rem;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
 }
 
 .cv-advice li {
@@ -513,7 +444,7 @@ main {
 .cv-advice-where,
 .cv-advice-jobs {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
 }
 
 .cv-advice-why {
@@ -531,12 +462,12 @@ main {
   margin-top: 0.8rem;
   padding-top: 0.8rem;
   border-top: 1px solid var(--border);
-  max-width: 720px;
+  max-width: var(--content-width);
 }
 
 .page-editor h4 {
   margin: 1rem 0 0.4rem;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
 }
 
 .page-editor-field {
@@ -544,7 +475,7 @@ main {
   flex-direction: column;
   gap: 0.2rem;
   margin-bottom: 0.5rem;
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
   color: var(--muted);
 }
 
@@ -552,9 +483,9 @@ main {
 .page-editor-field textarea {
   padding: 0.4rem 0.6rem;
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg);
   color: var(--fg);
   resize: vertical;
@@ -578,7 +509,7 @@ main {
   margin-bottom: 0.6rem;
   padding: 0.6rem 0.7rem;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 .page-editor-field--wide,
@@ -626,15 +557,15 @@ main {
 
 .add-job-form input {
   padding: 0.4rem 0.6rem;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg);
   color: var(--fg);
 }
 
 .empty {
-  max-width: 720px;
+  max-width: var(--content-width);
   margin: 2rem auto;
   text-align: center;
   color: var(--muted);
@@ -643,13 +574,13 @@ main {
 /* ── Application tracker ──────────────────────────────────────────────── */
 
 .action-btn.track-btn.active {
-  background: #2d7d46;
-  border-color: #2d7d46;
-  color: white;
+  background: var(--success-solid);
+  border-color: var(--success-solid);
+  color: #fff;
 }
 
 .job.is-tracked {
-  border-color: #2d7d46;
+  border-color: var(--success-solid);
 }
 
 .app-panel {
@@ -668,36 +599,36 @@ main {
 .app-badge {
   display: inline-block;
   padding: 0.2rem 0.6rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 600;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
 
 .app-badge--interested {
-  background: var(--chip-bg);
-  color: var(--chip-fg);
+  background: var(--accent-soft);
+  color: var(--accent-soft-fg);
 }
 
 .app-badge--applied {
-  background: #1d4ed8;
-  color: white;
+  background: var(--info-solid);
+  color: #fff;
 }
 
 .app-badge--interviewing {
-  background: #7c3aed;
-  color: white;
+  background: var(--violet-solid);
+  color: #fff;
 }
 
 .app-badge--offered {
-  background: #15803d;
-  color: white;
+  background: var(--success-solid);
+  color: #fff;
 }
 
 .app-badge--rejected {
-  background: #dc2626;
-  color: white;
+  background: var(--danger-solid);
+  color: #fff;
 }
 
 .app-badge--withdrawn {
@@ -706,17 +637,17 @@ main {
 }
 
 .app-status-select {
-  font-size: 0.82rem;
+  font-size: var(--text-sm);
   padding: 0.3rem 0.5rem;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--card-bg);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
   color: var(--fg);
 }
 
 .app-label {
   display: block;
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
   color: var(--muted);
   margin-bottom: 0.25rem;
   margin-top: 0.5rem;
@@ -725,12 +656,12 @@ main {
 .app-textarea {
   width: 100%;
   font-family: inherit;
-  font-size: 0.88rem;
-  line-height: 1.45;
+  font-size: var(--text-md);
+  line-height: var(--leading);
   padding: 0.5rem 0.6rem;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--card-bg);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
   color: var(--fg);
   resize: vertical;
 }
@@ -748,7 +679,7 @@ main {
    following the dark scheme with it. The textarea it replaces stays in the DOM,
    hidden, just before it. */
 :root {
-  --editor-bg: var(--card-bg);
+  --editor-bg: var(--surface);
   --editor-fg: var(--fg);
   --editor-muted: var(--muted);
   --editor-rule: var(--border);
@@ -756,18 +687,18 @@ main {
 }
 
 .app-panel .note-editor {
-  border-radius: 6px;
-  font-size: 0.88rem;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-md);
 
   &:focus-within { outline: 2px solid var(--accent); outline-offset: -1px; }
 }
 
-.app-panel .note-tool { font-size: 0.78rem; }
+.app-panel .note-tool { font-size: var(--text-xs); }
 
 .app-panel .note-editor-content .ProseMirror {
   min-height: 4.5em;
   font-size: 1em;
-  line-height: 1.45;
+  line-height: var(--leading);
 }
 
 .app-textarea--letter + .note-editor .note-editor-content .ProseMirror {
@@ -776,7 +707,7 @@ main {
 
 .app-meta {
   margin: 0.5rem 0 0;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--muted);
 }
 
@@ -785,11 +716,6 @@ main {
 .count-actions {
   display: flex;
   gap: 0.4rem;
-}
-
-.auth-btn--quiet {
-  background: var(--chip-bg);
-  color: var(--chip-fg);
 }
 
 .count-row {
@@ -806,15 +732,15 @@ main {
   max-height: calc(100vh - 2rem);
   margin: 0 auto;
   overflow: auto;
-  background: var(--card-bg);
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .sheet table {
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 0.82rem;
+  font-size: var(--text-sm);
   min-width: 100%;
 }
 
@@ -829,7 +755,7 @@ main {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 16rem;
-  background: var(--card-bg);
+  background: var(--surface);
 }
 
 .sheet th {
@@ -837,7 +763,7 @@ main {
   top: 0;
   z-index: 2;
   padding: 0;
-  background: var(--chip-bg);
+  background: var(--accent-soft);
 }
 
 .sheet th button {
@@ -845,9 +771,9 @@ main {
   padding: 0.45rem 0.6rem;
   border: none;
   background: none;
-  color: var(--chip-fg);
+  color: var(--accent-soft-fg);
   font: inherit;
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   text-align: left;
   cursor: pointer;
 }
@@ -913,7 +839,7 @@ main {
   border: none;
   background: none;
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: var(--text-md);
   padding: 0 0.15rem;
   cursor: pointer;
 }
@@ -932,23 +858,23 @@ main {
   background: none;
   --border_color: var(--border);
   --border_color_highlighted: var(--accent);
-  --header_background: var(--chip-bg);
+  --header_background: var(--accent-soft);
   --header_background_highlighted: var(--border);
-  --header_color: var(--chip-fg);
+  --header_color: var(--accent-soft-fg);
   --header_color_highlighted: var(--fg);
-  --content_background: var(--card-bg);
-  --content_background_highlighted: var(--chip-bg);
+  --content_background: var(--surface);
+  --content_background_highlighted: var(--accent-soft);
   --content_color: var(--fg);
   --content_color_highlighted: var(--fg);
-  --menu_background: var(--card-bg);
-  --menu_background_highlighted: var(--chip-bg);
+  --menu_background: var(--surface);
+  --menu_background_highlighted: var(--accent-soft);
   --menu_color: var(--fg);
   --menu_color_highlighted: var(--fg);
   /* Opaque, not a translucent tint: behind the cells is the library's white
      table, which a tint over a dark page turns into near-white. */
-  --selection: color-mix(in srgb, var(--accent) 22%, var(--card-bg));
-  --cursor: color-mix(in srgb, var(--accent) 12%, var(--card-bg));
-  font-size: 0.82rem;
+  --selection: color-mix(in srgb, var(--accent) 22%, var(--surface));
+  --cursor: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  font-size: var(--text-sm);
 }
 
 /* One line per row, like a sheet: Jspreadsheet sets pre-wrap inline on
@@ -960,7 +886,7 @@ main {
 }
 
 .sheet--grid .jss_worksheet {
-  background-color: var(--card-bg);
+  background-color: var(--surface);
 }
 
 /* The library colours links in selected cells plain "blue". */
@@ -978,7 +904,7 @@ main {
    the description. */
 .sheet--grid .jss_worksheet td.jss_column_filter.filter-active {
   color: var(--accent);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1000,7 +926,7 @@ main {
 .sheet--grid .jdropdown-default .jdropdown-header,
 .sheet--grid .jdropdown-default .jdropdown-container,
 .sheet--grid .jdropdown-default .jdropdown-content {
-  background-color: var(--card-bg);
+  background-color: var(--surface);
   color: var(--fg);
   border-color: var(--border);
 }
@@ -1011,19 +937,19 @@ main {
 
 .sheet--grid .jdropdown-default .jdropdown-item:hover,
 .sheet--grid .jdropdown-default .jdropdown-cursor {
-  background-color: var(--chip-bg);
+  background-color: var(--accent-soft);
   color: var(--fg);
 }
 
 .sheet--grid .jdropdown-default .jdropdown-selected {
   background-color: var(--accent);
-  color: var(--card-bg);
+  color: var(--surface);
 }
 
 /* Frozen columns (★, ✕, Title): the library paints them white with a
    light-grey shadow. */
 .sheet--grid .jss_worksheet tbody .jss_freezed {
-  background-color: var(--card-bg);
+  background-color: var(--surface);
   box-shadow: 1px 0 0 var(--border) !important;
 }
 
@@ -1075,5 +1001,5 @@ main {
   margin-left: auto;
   margin-right: 1rem;
   color: var(--accent);
-  font-size: 0.9rem;
+  font-size: var(--text-md);
 }

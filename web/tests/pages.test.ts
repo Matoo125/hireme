@@ -73,7 +73,7 @@ describe("renderPage", () => {
 
   test("shows the open-to-work badge only when the user turns it on", () => {
     expect(html).not.toContain("Open to work");
-    expect(renderPage(page, "jane", { openToWork: true })).toContain('<p class="open-to-work">Open to work</p>');
+    expect(renderPage(page, "jane", { openToWork: true })).toContain('<span class="badge badge--solid badge--success">Open to work</span>');
   });
 
   test("shows the contact form only when asked, escaping what the visitor typed", () => {

@@ -187,6 +187,8 @@ JWKS (`verifyToken` in `server.ts`) — this spec's older "no auth, single tenan
 that and is stale; §8 is corrected to match. `jobs.csv` is parsed once and re-parsed when its mtime or size
 changes, so a fresh scrape or hand correction is visible without restarting the server.
 
+Design system (`public/tokens.css`, reference page `/design.html`): every color (light and dark), type size, space step, radius and the shared components (`.btn` with `--primary/--danger/--quiet/--link/--small`, `.input`, `.field`, `.chip`, `.badge`, `.notice`, `.card`) are defined there once. `style.css` (the board) uses only its tokens; portfolio pages and `/people` inline the file into their `<style>` (their CSP allows no stylesheet links). Emails keep literal inline styles, since mail clients don't support CSS variables. No UI framework.
+
 Frontend (`public/app.js`): client-side search, sort (newest/oldest/closing soon/org), filter by
 tag or source board, and the like/not-relevant triage state described in §3.
 

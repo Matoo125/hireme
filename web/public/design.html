@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hireme design system</title>
+  <meta name="robots" content="noindex" />
+  <link rel="stylesheet" href="/tokens.css" />
+  <style>
+    body { padding: var(--space-10) var(--space-5) 4rem; }
+    main { max-width: var(--content-width); margin: 0 auto; }
+    h1 { font-size: var(--text-xl); margin: 0 0 var(--space-1); }
+    h2 { font-size: var(--text-lg); margin: var(--space-10) 0 var(--space-3); padding-bottom: var(--space-2); border-bottom: 1px solid var(--border); }
+    .row { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin-bottom: var(--space-3); }
+    .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--space-2); }
+    .swatch { border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; font-size: var(--text-xs); }
+    .swatch div { height: 44px; }
+    .swatch code { display: block; padding: var(--space-1) var(--space-2); }
+    .type p { margin: var(--space-1) 0; }
+    code { font-size: var(--text-xs); color: var(--muted); }
+    .stack { display: grid; gap: var(--space-3); max-width: 360px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Hireme design system</h1>
+  <p class="muted">Tokens and components from <code>/tokens.css</code>, used by the board, portfolio pages and /people. Switch your OS to dark mode to see the dark theme.</p>
+
+  <h2>Color</h2>
+  <div class="swatches" id="swatches"></div>
+
+  <h2>Type</h2>
+  <div class="type">
+    <p style="font-size:var(--text-2xl)">2xl · Portfolio name <code>--text-2xl</code></p>
+    <p style="font-size:var(--text-xl)">xl · Page title <code>--text-xl</code></p>
+    <p style="font-size:var(--text-lg)">lg · Job title <code>--text-lg</code></p>
+    <p style="font-size:var(--text-base)">base · Body <code>--text-base</code></p>
+    <p style="font-size:var(--text-md)">md · Secondary text <code>--text-md</code></p>
+    <p style="font-size:var(--text-sm)">sm · Controls, status lines <code>--text-sm</code></p>
+    <p style="font-size:var(--text-xs)">xs · Chips, meta, small buttons <code>--text-xs</code></p>
+    <p style="font-size:var(--text-2xs)">2xs · Tiny badges <code>--text-2xs</code></p>
+  </div>
+
+  <h2>Buttons</h2>
+  <div class="row">
+    <button class="btn btn--primary">Primary</button>
+    <button class="btn">Secondary</button>
+    <button class="btn btn--danger">Danger</button>
+    <button class="btn btn--quiet">Quiet</button>
+    <button class="btn btn--primary" disabled>Disabled</button>
+  </div>
+  <div class="row">
+    <button class="btn btn--primary btn--small">Small primary</button>
+    <button class="btn btn--small">Small</button>
+    <button class="btn btn--link">Link button</button>
+    <button class="btn btn--link btn--danger">Remove</button>
+  </div>
+
+  <h2>Inputs</h2>
+  <div class="stack">
+    <label class="field">Your email <input class="input" type="email" placeholder="you@example.org" /></label>
+    <label class="field">Message <textarea class="input" rows="3"></textarea></label>
+    <label class="field">Sort <select class="input"><option>Newest</option></select></label>
+  </div>
+
+  <h2>Chips and badges</h2>
+  <div class="row"><span class="chip">Python</span><span class="chip">SQL</span><span class="chip">Remote</span></div>
+  <div class="row">
+    <span class="badge">Neutral</span>
+    <span class="badge badge--success">Success</span>
+    <span class="badge badge--warning">Warning</span>
+    <span class="badge badge--danger">Danger</span>
+    <span class="badge badge--info">Info</span>
+    <span class="badge badge--violet">Violet</span>
+    <span class="badge badge--solid badge--success">Open to work</span>
+  </div>
+
+  <h2>Notices</h2>
+  <div class="stack">
+    <p class="notice">Your page is being made from your CV.</p>
+    <p class="notice notice--success">Sent. They'll reply by email.</p>
+    <p class="notice notice--error">Enter a valid email address.</p>
+  </div>
+
+  <h2>Card</h2>
+  <div class="card">
+    <strong>Data engineer</strong>
+    <p class="muted" style="margin:var(--space-1) 0 0;font-size:var(--text-sm)">Example Org · Remote · Closes 2026-12-01</p>
+  </div>
+</main>
+<script>
+  const names = ["bg", "surface", "surface-sunken", "fg", "muted", "border", "accent", "accent-soft",
+    "success-solid", "success-soft", "warning-solid", "warning-soft", "danger-solid", "danger-soft",
+    "info-solid", "info-soft", "violet-solid", "violet-soft"];
+  const root = getComputedStyle(document.documentElement);
+  document.getElementById("swatches").append(...names.map((n) => {
+    const el = document.createElement("div");
+    el.className = "swatch";
+    el.innerHTML = `<div style="background:var(--${n})"></div><code>--${n}<br>${root.getPropertyValue("--" + n).trim()}</code>`;
+    return el;
+  }));
+</script>
+</body>
+</html>
