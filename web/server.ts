@@ -415,6 +415,7 @@ async function digestStatus(userId: number, digest: DigestSettings | null) {
     email: digest?.email ?? "",
     status: !digest ? "off" : digest.confirmed ? "on" : "pending",
     minFit: digest?.minFit ?? DEFAULT_MIN_FIT,
+    reminders: digest ? digest.reminders !== false : true,
     scored: (await readFitScores(userId)) !== null,
     available: RESEND_API_KEY !== "",
   };
@@ -1323,6 +1324,13 @@ Bun.serve({
       if (req.method === "PUT") {
         if (!RESEND_API_KEY) return Response.json({ error: "Email digests aren't set up on this server" }, { status: 503 });
         const body = await req.json().catch(() => null);
+        // {reminders} alone: turn deadline reminders on or off, keeping the address.
+        if (typeof body?.reminders === "boolean" && body.email === undefined) {
+          if (!current) return Response.json({ error: "Turn the digest on first" }, { status: 400 });
+          const updated = { ...current, reminders: body.reminders };
+          await writeDigest(DATA_DIR, user.id, updated);
+          return Response.json(await digestStatus(user.id, updated));
+        }
         const email = typeof body?.email === "string" ? body.email.trim() : "";
         const problem = emailProblem(email);
         if (problem) return Response.json({ error: problem }, { status: 400 });

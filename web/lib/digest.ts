@@ -22,6 +22,8 @@ export interface DigestSettings {
   confirmSends: number[]; // when confirmation emails went out (ms), last 24 hours only
   lastSentAt: string | null;
   sentIds: string[]; // jobs already emailed, newest last
+  reminders?: boolean; // deadline reminders (lib/reminders.ts); missing means on
+  remindedKeys?: string[]; // "<job id>@<close date>" already reminded, newest last
 }
 
 // &#39; rather than &apos;, which older mail clients show as is.
@@ -101,6 +103,8 @@ export function newDigest(email: string, minFit: number, previous: DigestSetting
     confirmSends: previous?.confirmSends ?? [],
     lastSentAt: previous?.lastSentAt ?? null,
     sentIds: previous?.sentIds ?? [],
+    reminders: previous?.reminders ?? true,
+    remindedKeys: previous?.remindedKeys ?? [],
   };
 }
 

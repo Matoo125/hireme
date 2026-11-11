@@ -661,6 +661,8 @@ function showDigest(digest) {
   const info = document.getElementById("digestInfo");
   if (!input.matches(":focus")) input.value = digest.email;
   document.getElementById("digestStop").hidden = digest.status === "off";
+  document.getElementById("remindersRow").hidden = digest.status === "off" || !digest.available;
+  document.getElementById("digestReminders").checked = digest.reminders;
   info.className = "cv-status";
   info.hidden = false;
   if (!digest.available) {
@@ -751,6 +753,14 @@ document.getElementById("pageEditCancel").addEventListener("click", () => {
 });
 document.getElementById("feedEnabled").addEventListener("change", (e) => saveFeed({ enabled: e.target.checked }));
 document.getElementById("digestForm").addEventListener("submit", saveDigest);
+document.getElementById("digestReminders").addEventListener("change", async (e) => {
+  try {
+    showDigest(await digestRequest("PUT", { reminders: e.target.checked }));
+  } catch (err) {
+    if (err.message === "Session expired") logout();
+    else showDigestError(err.message);
+  }
+});
 document.getElementById("digestStop").addEventListener("click", stopDigest);
 document.getElementById("feedCopy").addEventListener("click", copyFeedUrl);
 document.getElementById("feedRotate").addEventListener("click", () => {
