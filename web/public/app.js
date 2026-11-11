@@ -91,6 +91,7 @@ function updateAuthUI() {
     addJobSection.hidden = false;
     loadCvInfo();
     loadPageInfo();
+    loadContactInfo();
     loadFeedInfo();
     loadDigestInfo();
   } else {
@@ -366,6 +367,45 @@ function showPageError(message) {
   pageInfo.hidden = false;
   pageInfo.textContent = message;
   pageInfo.className = "cv-status cv-status--error";
+}
+
+const CONTACT_STATUS_TEXT = {
+  off: "Visitors can write to you from a form on your page. Your address is never shown.",
+  pending: "Check your inbox and confirm the address. The form appears on your page once you do.",
+  on: "Your page has a contact form. Messages are emailed to this address; it's never shown.",
+};
+
+function showContact(contact, error) {
+  const info = document.getElementById("contactInfo");
+  const email = document.getElementById("contactEmail");
+  if (contact) {
+    if (!email.matches(":focus")) email.value = contact.email;
+    document.getElementById("contactOff").hidden = contact.status === "off";
+    if (!contact.available) error = "Messages aren't set up on this server.";
+  }
+  info.className = error ? "cv-status cv-status--error" : "cv-status";
+  info.textContent = error || CONTACT_STATUS_TEXT[contact?.status] || "";
+}
+
+async function contactRequest(method, body) {
+  try {
+    const jwt = await getJwt();
+    const res = await fetch("/api/page/contact", {
+      method,
+      headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Something went wrong");
+    showContact(data);
+  } catch (err) {
+    if (err.message === "Session expired") logout();
+    else showContact(null, err.message);
+  }
+}
+
+function loadContactInfo() {
+  contactRequest("GET");
 }
 
 async function loadPageInfo() {
@@ -694,6 +734,14 @@ document.getElementById("cvFile").addEventListener("change", (e) => {
 });
 document.getElementById("pageEnabled").addEventListener("change", savePage);
 document.getElementById("pageOpenToWork").addEventListener("change", savePage);
+document.getElementById("contactForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  contactRequest("PUT", { email: document.getElementById("contactEmail").value.trim() });
+});
+document.getElementById("contactOff").addEventListener("click", () => {
+  document.getElementById("contactEmail").value = "";
+  contactRequest("DELETE");
+});
 document.getElementById("pageForm").addEventListener("submit", savePage);
 document.getElementById("pageEditBtn").addEventListener("click", openPageEditor);
 document.getElementById("pageRemakeBtn").addEventListener("click", remakePage);

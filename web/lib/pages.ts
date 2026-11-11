@@ -276,12 +276,30 @@ const STYLE = `
   .skills { display: flex; flex-wrap: wrap; gap: .4rem; list-style: none; padding: 0; }
   .skills li { border: 1px solid var(--line); border-radius: 999px; padding: .1rem .7rem; font-size: .9rem; }
   .open-to-work { display: inline-block; margin: 0 0 .6rem; padding: .15rem .8rem; border-radius: 999px; background: #1a7f37; color: #fff; font-size: .85rem; font-weight: 600; }
+  .notice { padding: .6rem .9rem; border: 1px solid var(--line); border-radius: 8px; }
+  .notice--error { border-color: #c0392b; }
+  form.contact { display: grid; gap: .8rem; }
+  form.contact label { display: grid; gap: .2rem; font-size: .95rem; }
+  form.contact .hp { position: absolute; left: -9999px; }
+  input, textarea { font: inherit; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: .45rem .6rem; width: 100%; }
+  button { font: inherit; justify-self: start; padding: .45rem 1.1rem; border: 0; border-radius: 6px; background: var(--accent); color: var(--bg); cursor: pointer; }
+  form.search { display: flex; gap: .5rem; margin: 1.5rem 0 .5rem; }
+  h3 a { color: var(--accent); }
   footer { margin-top: 3rem; color: var(--muted); font-size: .85rem; }
 `;
 
 /** The full HTML document for a page. Every value is escaped, every link checked. */
-export function renderPage(page: PageContent, slug: string, openToWork = false): string {
+export interface PageOptions {
+  openToWork?: boolean;
+  // Show the contact form (the owner confirmed where messages go).
+  contact?: boolean;
+  // After a form post: what happened, and the visitor's text to keep on an error.
+  contactResult?: { sent: true } | { error: string; values: Record<string, string> };
+}
+
+export function renderPage(page: PageContent, slug: string, opts: PageOptions = {}): string {
   const c = page.content;
+  const openToWork = opts.openToWork ?? false;
   const links = c.links.flatMap((l) => {
     const url = webUrl(l.url);
     return url ? [`<a href="${esc(url)}" rel="me noopener nofollow">${esc(l.label)}</a>`] : [];
@@ -334,7 +352,94 @@ export function renderPage(page: PageContent, slug: string, openToWork = false):
   ${section("Projects", projects)}
   ${section("Education", education)}
   ${section("Skills", skills)}
+  ${opts.contact ? contactForm(c.name, opts.contactResult) : ""}
   <footer>Published at ${esc(slug)} on hireme.sk · ${page.edited ? "" : "generated from a CV, "}last updated ${esc((page.editedAt ?? page.generatedAt).slice(0, 10))}</footer>
+</main>
+</body>
+</html>
+`;
+}
+
+function contactForm(name: string, result: PageOptions["contactResult"]): string {
+  if (result && "sent" in result) {
+    return `<h2 id="contact">Contact</h2>\n<p class="notice">Sent. ${esc(name)} will reply by email if they're interested.</p>`;
+  }
+  const v = result?.values ?? {};
+  return `<h2 id="contact">Contact ${esc(name)}</h2>
+  ${result ? `<p class="notice notice--error">${esc(result.error)}</p>` : ""}
+  <form class="contact" method="post" action="/contact#contact">
+    <label>Your name <input name="name" maxlength="100" required value="${esc(v.name ?? "")}"></label>
+    <label>Your email <input name="email" type="email" maxlength="254" required value="${esc(v.email ?? "")}"></label>
+    <label>Message <textarea name="message" rows="6" minlength="10" maxlength="3000" required>${esc(v.message ?? "")}</textarea></label>
+    <label class="hp" aria-hidden="true">Website <input name="website" tabindex="-1" autocomplete="off"></label>
+    <button type="submit">Send</button>
+    <p class="meta">Your message is emailed to them with your address to reply to. Their address isn't shown to you.</p>
+  </form>`;
+}
+
+// ── People open to work ──────────────────────────────────────────────────────
+
+export interface Person {
+  slug: string;
+  name: string;
+  headline: string;
+  skills: string[];
+}
+
+/** Published pages whose owners are open to work, CV still there, by name. */
+export async function openToWorkPeople(dir: string): Promise<Person[]> {
+  const out: Person[] = [];
+  for (const { userId, settings } of await allSettings(dir)) {
+    if (!settings.enabled || !settings.openToWork) continue;
+    if (!(await Bun.file(path.join(dir, "cv", `${userId}.pdf`)).exists())) continue;
+    const page = await readContent(dir, userId).catch(() => null);
+    if (!page) continue;
+    const c = page.content;
+    out.push({ slug: settings.slug, name: c.name, headline: c.headline, skills: c.skills });
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** People matching every word of `query` in their name, headline or skills. */
+export function searchPeople(people: Person[], query: string): Person[] {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return people;
+  return people.filter((p) => {
+    const text = [p.name, p.headline, ...p.skills].join(" ").toLowerCase();
+    return words.every((w) => text.includes(w));
+  });
+}
+
+/** The /people listing: who's open to work, with a search box. */
+export function renderPeople(people: Person[], query: string, total: number, domain: string, site: string): string {
+  const cards = people.map((p) => `
+    <div class="item">
+      <h3><a href="https://${esc(p.slug)}.${esc(domain)}/">${esc(p.name)}</a></h3>
+      ${p.headline ? `<div class="meta">${esc(p.headline)}</div>` : ""}
+      ${p.skills.length ? `<ul class="skills">${p.skills.slice(0, 12).map((s) => `<li>${esc(s)}</li>`).join("")}</ul>` : ""}
+    </div>`).join("");
+  const count = query
+    ? `${people.length} of ${total} match “${esc(query)}”.`
+    : total === 1 ? "1 person is open to work." : `${total} people are open to work.`;
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open to work · Hireme</title>
+<meta name="description" content="People on Hireme who are looking for work, with their portfolio pages.">
+<style>${STYLE}</style>
+</head>
+<body>
+<main>
+  <h1>Open to work</h1>
+  <p class="headline">People on <a href="${esc(site)}">Hireme</a> looking for a job. Open a page to read more and get in touch.</p>
+  <form class="search" method="get" action="/people">
+    <input name="q" type="search" placeholder="Skill, role or name" maxlength="100" value="${esc(query)}" aria-label="Search">
+    <button type="submit">Search</button>
+  </form>
+  <p class="meta">${count}</p>
+  ${cards || (total ? "<p>No one matches. Try fewer words.</p>" : "<p>No one yet.</p>")}
 </main>
 </body>
 </html>

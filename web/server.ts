@@ -8,8 +8,8 @@ import { fetchPage, FetchError } from "./lib/fetch-page";
 import { parseRows } from "./lib/csv";
 import { handleV1 } from "./lib/api-v1";
 import {
-  cleanEdit, cvHash, findPage, readContent, readSettings, removeContent, renderNotFound, renderPage,
-  slugFromHost, slugOwner, slugProblem, writeContent, writeSettings, type PageSettings,
+  cleanEdit, cvHash, findPage, openToWorkPeople, readContent, renderPeople, searchPeople, readSettings, removeContent, renderNotFound, renderPage,
+  slugFromHost, slugOwner, slugProblem, writeContent, writeSettings, type PageOptions, type PageSettings,
 } from "./lib/pages";
 import {
   DEFAULT_MIN_FIT, feedItems, findFeed, newToken, readFeed, removeFeed, renderFeed, writeFeed,
@@ -19,6 +19,10 @@ import {
   confirmEmail, confirmLimit, emailProblem, findDigest, LINK_PAGE_HEADERS, linkPage, newDigest,
   readDigest, recordConfirmSend, removeDigest, sendEmail, writeDigest, type DigestSettings,
 } from "./lib/digest";
+import {
+  cleanMessage, contactConfirmEmail, findContactByToken, messageEmail, messageLimit, newContact,
+  readContact, recordMessage, removeContact, writeContact, type ContactSettings,
+} from "./lib/contact";
 
 const PORT = Number(process.env.PORT ?? 4020);
 const ROOT = import.meta.dir;
@@ -398,10 +402,89 @@ async function serveDigestLink(kind: "confirm" | "unsubscribe", token: string, r
   return page(`Stop sending job digests to ${found.digest.email}?`, 200, { action, label: "Unsubscribe" });
 }
 
+// Contact form posts per visitor IP (behind Caddy: X-Forwarded-For), in memory.
+const CONTACT_POSTS_PER_HOUR = 5;
+const contactPosts = new Map<string, number[]>();
+
+function visitorLimited(ip: string, now: number): boolean {
+  const recent = (contactPosts.get(ip) ?? []).filter((t) => now - t < 3_600_000);
+  contactPosts.set(ip, recent);
+  if (recent.length >= CONTACT_POSTS_PER_HOUR) return true;
+  recent.push(now);
+  return false;
+}
+
 async function servePage(slug: string, req: Request): Promise<Response> {
-  const page = new URL(req.url).pathname === "/" ? await findPage(DATA_DIR, slug) : null;
+  const pathname = new URL(req.url).pathname;
+  const isPost = pathname === "/contact" && req.method === "POST";
+  const page = (pathname === "/" && !isPost) || isPost ? await findPage(DATA_DIR, slug) : null;
   if (!page) return new Response(renderNotFound(), { status: 404, headers: PAGE_HEADERS });
-  return new Response(renderPage(page.content, slug, page.settings.openToWork ?? false), { headers: PAGE_HEADERS });
+
+  const contact = await readContact(DATA_DIR, page.userId);
+  const contactable = Boolean(contact?.confirmed && RESEND_API_KEY);
+  const headers = contactable
+    ? { ...PAGE_HEADERS, "Content-Security-Policy": PAGE_HEADERS["Content-Security-Policy"].replace("form-action 'none'", "form-action 'self'") }
+    : PAGE_HEADERS;
+  const render = (contactResult?: PageOptions["contactResult"], status = 200) =>
+    new Response(renderPage(page.content, slug, { openToWork: page.settings.openToWork, contact: contactable, contactResult }), {
+      status,
+      headers: isPost ? { ...headers, "Cache-Control": "no-store" } : headers,
+    });
+  if (!isPost) return render();
+  if (!contactable) return new Response(renderNotFound(), { status: 404, headers: PAGE_HEADERS });
+
+  const form = await req.formData().catch(() => new FormData());
+  const values = Object.fromEntries(["name", "email", "message"].map((k) => [k, String(form.get(k) ?? "")]));
+  const msg = cleanMessage(form);
+  if ("error" in msg) return msg.error === "spam" ? render({ sent: true }) : render({ error: msg.error, values }, 400);
+  const now = Date.now();
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "unknown";
+  if (visitorLimited(ip, now)) return render({ error: "Too many messages from you; try again in an hour", values }, 429);
+  const limit = messageLimit(contact!, now);
+  if (limit) return render({ error: limit, values }, 429);
+  try {
+    await sendEmail(messageEmail(contact!.email, msg, `https://${slug}.${PAGES_DOMAIN}/`, SITE_URL), {
+      apiKey: RESEND_API_KEY, from: DIGEST_FROM, url: process.env.RESEND_API_URL,
+    });
+  } catch (err) {
+    console.error(`Contact email failed: ${err instanceof Error ? err.message : err}`);
+    return render({ error: "Couldn't send your message; try again later", values }, 502);
+  }
+  await writeContact(DATA_DIR, page.userId, recordMessage(contact!, now));
+  return render({ sent: true });
+}
+
+/** /people: published pages of users open to work, searchable. */
+async function servePeople(url: URL): Promise<Response> {
+  const query = (url.searchParams.get("q") ?? "").trim().slice(0, 100);
+  const people = await openToWorkPeople(DATA_DIR);
+  return new Response(renderPeople(searchPeople(people, query), query, people.length, PAGES_DOMAIN, SITE_URL), {
+    headers: { ...PAGE_HEADERS, "Content-Security-Policy": PAGE_HEADERS["Content-Security-Policy"].replace("form-action 'none'", "form-action 'self'") },
+  });
+}
+
+function contactStatus(contact: ContactSettings | null) {
+  return {
+    email: contact?.email ?? "",
+    status: !contact ? "off" : contact.confirmed ? "on" : "pending",
+    available: RESEND_API_KEY !== "",
+  };
+}
+
+/** /contact/confirm/<token>: a button on GET (mail scanners follow links), the change on POST. */
+async function serveContactConfirm(token: string, req: Request): Promise<Response> {
+  const page = (message: string, status = 200, button?: { action: string; label: string }) =>
+    new Response(linkPage(message, SITE_URL, button), { status, headers: LINK_PAGE_HEADERS });
+  const found = await findContactByToken(DATA_DIR, token);
+  if (!found) return page("This link has expired. Turn messages on again from Hireme to get a new one.", 404);
+  if (req.method === "POST") {
+    if (!found.contact.confirmed) {
+      await writeContact(DATA_DIR, found.userId, { ...found.contact, confirmed: true, confirmedAt: new Date().toISOString() });
+    }
+    return page(`Confirmed. Messages from your page will go to ${found.contact.email}.`);
+  }
+  if (found.contact.confirmed) return page(`${found.contact.email} is already confirmed.`);
+  return page(`Send messages from your Hireme page to ${found.contact.email}?`, 200, { action: `/contact/confirm/${token}`, label: "Confirm" });
 }
 
 // ── Preferences helpers ──────────────────────────────────────────────────────
@@ -569,6 +652,56 @@ Bun.serve({
     // ── Portfolio pages: <slug>.hireme.sk ──────────────────────────────────
     const pageSlug = slugFromHost(req.headers.get("host"), PAGES_DOMAIN);
     if (pageSlug) return servePage(pageSlug, req);
+
+    if (url.pathname === "/people" && req.method === "GET") return servePeople(url);
+
+    const contactLink = url.pathname.match(/^\/contact\/confirm\/([^/]+)$/);
+    if (contactLink) {
+      if (req.method !== "GET" && req.method !== "POST") return new Response("Method not allowed", { status: 405 });
+      return serveContactConfirm(contactLink[1], req);
+    }
+
+    // GET → {email, status: off|pending|on, available}. PUT {email}: send a
+    // confirmation link; messages go there once confirmed. DELETE: turn off.
+    if (url.pathname === "/api/page/contact") {
+      let user: { id: number; username: string | null };
+      try {
+        user = await verifyToken(req.headers.get("authorization"));
+      } catch {
+        return Response.json({ error: "unauthorized" }, { status: 401 });
+      }
+      const current = await readContact(DATA_DIR, user.id);
+      if (req.method === "GET") return Response.json(contactStatus(current));
+      if (req.method === "DELETE") {
+        await removeContact(DATA_DIR, user.id);
+        return Response.json(contactStatus(null));
+      }
+      if (req.method === "PUT") {
+        if (!RESEND_API_KEY) return Response.json({ error: "Email isn't set up on this server" }, { status: 503 });
+        const body = await req.json().catch(() => null);
+        const email = typeof body?.email === "string" ? body.email.trim() : "";
+        const problem = emailProblem(email);
+        if (problem) return Response.json({ error: problem }, { status: 400 });
+        const sameAddress = current?.email.toLowerCase() === email.toLowerCase();
+        if (sameAddress && current?.confirmed) return Response.json(contactStatus(current));
+        let contact = sameAddress && current ? current : newContact(email, current, new Date());
+        const now = Date.now();
+        const limit = confirmLimit(contact, now);
+        if (limit) return Response.json({ error: limit }, { status: 429 });
+        try {
+          await sendEmail(contactConfirmEmail(email, `${SITE_URL}/contact/confirm/${contact.confirmToken}`, SITE_URL), {
+            apiKey: RESEND_API_KEY, from: DIGEST_FROM, url: process.env.RESEND_API_URL,
+          });
+        } catch (err) {
+          console.error(`Contact confirmation email failed: ${err instanceof Error ? err.message : err}`);
+          return Response.json({ error: "Could not send the confirmation email; try again later" }, { status: 502 });
+        }
+        contact = recordConfirmSend(contact, now);
+        await writeContact(DATA_DIR, user.id, contact);
+        return Response.json(contactStatus(contact));
+      }
+      return new Response("Method not allowed", { status: 405 });
+    }
 
     // ── Jobs API ───────────────────────────────────────────────────────────
     if (url.pathname === "/api/jobs") {

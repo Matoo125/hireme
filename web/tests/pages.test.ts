@@ -6,7 +6,7 @@ import { mkdir, mkdtemp, rm, unlink } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import {
-  cleanEdit, cvHash, findPage, renderNotFound, renderPage, removeContent, slugFromHost, slugOwner,
+  cleanEdit, cvHash, findPage, openToWorkPeople, renderNotFound, renderPeople, searchPeople, renderPage, removeContent, slugFromHost, slugOwner,
   slugProblem, writeSettings, type PageContent,
 } from "../lib/pages";
 
@@ -73,7 +73,23 @@ describe("renderPage", () => {
 
   test("shows the open-to-work badge only when the user turns it on", () => {
     expect(html).not.toContain("Open to work");
-    expect(renderPage(page, "jane", true)).toContain('<p class="open-to-work">Open to work</p>');
+    expect(renderPage(page, "jane", { openToWork: true })).toContain('<p class="open-to-work">Open to work</p>');
+  });
+
+  test("shows the contact form only when asked, escaping what the visitor typed", () => {
+    expect(html).not.toContain('action="/contact');
+    const form = renderPage(page, "jane", { contact: true });
+    expect(form).toContain('<form class="contact" method="post" action="/contact#contact">');
+    const error = renderPage(page, "jane", {
+      contact: true,
+      contactResult: { error: "Write a message", values: { name: '"><script>x</script>', email: "", message: "</textarea><b>" } },
+    });
+    expect(error).toContain("Write a message");
+    expect(error).not.toContain("<script>x</script>");
+    expect(error).not.toContain("</textarea><b>");
+    const sent = renderPage(page, "jane", { contact: true, contactResult: { sent: true } });
+    expect(sent).toContain("Sent.");
+    expect(sent).not.toContain("<form");
   });
 
   test("escapes every text value", () => {
@@ -238,5 +254,51 @@ describe("storage lookups", () => {
     await removeContent(dir, 1);
     expect(await findPage(dir, "jane")).toBeNull();
     expect(await slugOwner(dir, "jane")).toBe(1);
+  });
+});
+
+describe("people open to work", () => {
+  let dir: string;
+  const person = (name: string, headline: string, skills: string[]) =>
+    JSON.stringify({ ...page, content: { ...page.content, name, headline, skills } });
+
+  beforeAll(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "hireme-people-"));
+    await mkdir(path.join(dir, "pages"), { recursive: true });
+    const add = async (id: number, settings: object, content: string | null, cv = true) => {
+      await writeSettings(dir, id, { updatedAt: "", ...settings } as never);
+      if (content) await Bun.write(path.join(dir, "page-content", `${id}.json`), content);
+      if (cv) await Bun.write(path.join(dir, "cv", `${id}.pdf`), "%PDF");
+    };
+    await add(1, { enabled: true, slug: "zoe", openToWork: true }, person("Zoe", "Data engineer", ["Python", "SQL"]));
+    await add(2, { enabled: true, slug: "adam", openToWork: true }, person("Adam", "Designer", ["Figma"]));
+    await add(3, { enabled: true, slug: "busy" }, person("Busy", "Not looking", []));
+    await add(4, { enabled: false, slug: "off", openToWork: true }, person("Off", "Page off", []));
+    await add(5, { enabled: true, slug: "nocv", openToWork: true }, person("No CV", "CV deleted", []), false);
+  });
+
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test("lists only published pages of people open to work with a CV, by name", async () => {
+    expect((await openToWorkPeople(dir)).map((p) => p.slug)).toEqual(["adam", "zoe"]);
+  });
+
+  test("search needs every word in the name, headline or skills", async () => {
+    const people = await openToWorkPeople(dir);
+    expect(searchPeople(people, "python ENGINEER").map((p) => p.slug)).toEqual(["zoe"]);
+    expect(searchPeople(people, "python figma")).toEqual([]);
+    expect(searchPeople(people, "  ")).toHaveLength(2);
+  });
+
+  test("renders escaped cards linking to each page", () => {
+    const html = renderPeople(
+      [{ slug: "zoe", name: "<b>Zoe</b>", headline: "Data", skills: ["SQL"] }], '"q', 2, DOMAIN, "https://hireme.sk"
+    );
+    expect(html).toContain('href="https://zoe.hireme.sk/"');
+    expect(html).toContain("&lt;b&gt;Zoe&lt;/b&gt;");
+    expect(html).toContain('value="&quot;q"');
+    expect(html).toContain("1 of 2 match");
   });
 });

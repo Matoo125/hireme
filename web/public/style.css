@@ -1070,3 +1070,10 @@ main {
     box-shadow: none;
   }
 }
+
+.header-link {
+  margin-left: auto;
+  margin-right: 1rem;
+  color: var(--accent);
+  font-size: 0.9rem;
+}

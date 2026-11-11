@@ -13,6 +13,7 @@
   <header>
     <div class="header-top">
       <h1>Hireme.sk</h1>
+      <a href="/people" class="header-link">People open to work</a>
       <div id="authControls" class="auth-controls">
         <button id="loginBtn" class="auth-btn" hidden>Login</button>
         <span id="userInfo" class="user-info" hidden>
@@ -73,6 +74,12 @@
         </div>
         <p id="pageEditorInfo" class="cv-status" hidden></p>
       </form>
+      <form id="contactForm" class="add-job-form">
+        <input id="contactEmail" type="email" placeholder="Where messages from your page go" maxlength="254" autocomplete="email" />
+        <button type="submit" class="auth-btn auth-btn--small">Let people message me</button>
+        <button id="contactOff" type="button" class="cv-action" hidden>Turn off</button>
+      </form>
+      <p id="contactInfo" class="cv-status">Visitors can write to you from a form on your page. Your address is never shown.</p>
     </div>
 
     <div id="feedSection" class="cv-section" hidden>
