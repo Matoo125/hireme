@@ -71,6 +71,11 @@ describe("slugFromHost", () => {
 describe("renderPage", () => {
   const html = renderPage(page, "jane");
 
+  test("shows the open-to-work badge only when the user turns it on", () => {
+    expect(html).not.toContain("Open to work");
+    expect(renderPage(page, "jane", true)).toContain('<p class="open-to-work">Open to work</p>');
+  });
+
   test("escapes every text value", () => {
     expect(html).not.toContain("<script>alert(1)</script>");
     expect(html).toContain("Jane &lt;script&gt;alert(1)&lt;/script&gt;");

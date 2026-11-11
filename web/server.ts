@@ -293,6 +293,7 @@ async function pageStatus(userId: number, settings: PageSettings | null) {
   return {
     enabled: settings?.enabled ?? false,
     slug: settings?.slug ?? "",
+    openToWork: settings?.openToWork ?? false,
     url: settings?.enabled ? `https://${settings.slug}.${PAGES_DOMAIN}/` : null,
     status,
     // Content to show and edit: there is some, and it's for a CV the user still has.
@@ -400,7 +401,7 @@ async function serveDigestLink(kind: "confirm" | "unsubscribe", token: string, r
 async function servePage(slug: string, req: Request): Promise<Response> {
   const page = new URL(req.url).pathname === "/" ? await findPage(DATA_DIR, slug) : null;
   if (!page) return new Response(renderNotFound(), { status: 404, headers: PAGE_HEADERS });
-  return new Response(renderPage(page.content, slug), { headers: PAGE_HEADERS });
+  return new Response(renderPage(page.content, slug, page.settings.openToWork ?? false), { headers: PAGE_HEADERS });
 }
 
 // ── Preferences helpers ──────────────────────────────────────────────────────
@@ -988,11 +989,15 @@ Bun.serve({
         return Response.json(await pageStatus(user.id, await readSettings(DATA_DIR, user.id)));
       }
 
-      // PUT {enabled, slug?}: turn the page on or off, optionally choosing its address.
+      // PUT {enabled, slug?, openToWork?}: turn the page on or off, optionally choosing its
+      // address and whether it says the user is open to work.
       if (req.method === "PUT") {
         const body = await req.json().catch(() => null);
         if (typeof body?.enabled !== "boolean") {
           return Response.json({ error: "enabled must be true or false" }, { status: 400 });
+        }
+        if (body.openToWork !== undefined && typeof body.openToWork !== "boolean") {
+          return Response.json({ error: "openToWork must be true or false" }, { status: 400 });
         }
         const current = await readSettings(DATA_DIR, user.id);
         const slug = typeof body.slug === "string" ? body.slug.trim().toLowerCase() : (current?.slug ?? "");
@@ -1007,7 +1012,9 @@ Bun.serve({
             return Response.json({ error: "That address is taken" }, { status: 409 });
           }
         }
-        const settings: PageSettings = { enabled: body.enabled, slug, updatedAt: new Date().toISOString() };
+        const settings: PageSettings = {
+          enabled: body.enabled, slug, openToWork: body.openToWork ?? current?.openToWork ?? false, updatedAt: new Date().toISOString(),
+        };
         await writeSettings(DATA_DIR, user.id, settings);
         if (settings.enabled && (await Bun.file(cvPdfPath(user.id)).exists())) startPageContent(user.id);
         return Response.json(await pageStatus(user.id, settings));

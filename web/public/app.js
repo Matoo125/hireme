@@ -324,6 +324,7 @@ function showPage(page) {
   const pageInfo = document.getElementById("pageInfo");
 
   pageEnabled.checked = page.enabled;
+  document.getElementById("pageOpenToWork").checked = page.openToWork;
   if (!pageSlug.matches(":focus")) pageSlug.value = page.slug;
   pageInfo.className = page.error ? "cv-status cv-status--error" : "cv-status";
   pageInfo.hidden = false;
@@ -392,7 +393,11 @@ async function savePage(e) {
         Authorization: `Bearer ${jwt}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ enabled: pageEnabled.checked, slug: pageSlug.value.trim() }),
+      body: JSON.stringify({
+        enabled: pageEnabled.checked,
+        slug: pageSlug.value.trim(),
+        openToWork: document.getElementById("pageOpenToWork").checked,
+      }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || "Save failed");
@@ -688,6 +693,7 @@ document.getElementById("cvFile").addEventListener("change", (e) => {
   document.getElementById("cvUploadBtn").disabled = !e.target.files.length;
 });
 document.getElementById("pageEnabled").addEventListener("change", savePage);
+document.getElementById("pageOpenToWork").addEventListener("change", savePage);
 document.getElementById("pageForm").addEventListener("submit", savePage);
 document.getElementById("pageEditBtn").addEventListener("click", openPageEditor);
 document.getElementById("pageRemakeBtn").addEventListener("click", remakePage);

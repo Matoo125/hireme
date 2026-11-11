@@ -10,6 +10,8 @@ import path from "path";
 export interface PageSettings {
   enabled: boolean;
   slug: string;
+  // Shows an "Open to work" badge on the page. Missing means no (pages made before the option).
+  openToWork?: boolean;
   updatedAt: string;
 }
 
@@ -273,11 +275,12 @@ const STYLE = `
   ul { padding-left: 1.2rem; margin: .4rem 0 0; }
   .skills { display: flex; flex-wrap: wrap; gap: .4rem; list-style: none; padding: 0; }
   .skills li { border: 1px solid var(--line); border-radius: 999px; padding: .1rem .7rem; font-size: .9rem; }
+  .open-to-work { display: inline-block; margin: 0 0 .6rem; padding: .15rem .8rem; border-radius: 999px; background: #1a7f37; color: #fff; font-size: .85rem; font-weight: 600; }
   footer { margin-top: 3rem; color: var(--muted); font-size: .85rem; }
 `;
 
 /** The full HTML document for a page. Every value is escaped, every link checked. */
-export function renderPage(page: PageContent, slug: string): string {
+export function renderPage(page: PageContent, slug: string, openToWork = false): string {
   const c = page.content;
   const links = c.links.flatMap((l) => {
     const url = webUrl(l.url);
@@ -323,6 +326,7 @@ export function renderPage(page: PageContent, slug: string): string {
 <body>
 <main>
   <h1>${esc(c.name)}</h1>
+  ${openToWork ? `<p class="open-to-work">Open to work</p>` : ""}
   ${c.headline ? `<p class="headline">${esc(c.headline)}</p>` : ""}
   ${links.length ? `<p class="links">${links.join("")}</p>` : ""}
   ${c.summary ? `<p>${esc(c.summary)}</p>` : ""}
