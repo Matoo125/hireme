@@ -84,6 +84,21 @@ await Bun.write(path.join(dir, "data", "cv-advice", "7.json"), JSON.stringify({
   },
 }));
 
+// An application draft for the plain user and the first fixture job, as
+// application_draft.py would write it for a CV whose bytes are "%PDF-1.4 draft cv".
+// Written again before every test, since deleting a CV deletes it.
+const DRAFT_PATH = path.join(dir, "data", "drafts", "7", `${fixtureIds[0]}.json`);
+const DRAFT = JSON.stringify({
+  cv: new Bun.CryptoHasher("sha256").update("%PDF-1.4 draft cv").digest("hex"),
+  model: "test", version: 1, job: fixtureIds[0], fromPosting: true, generatedAt: "2026-11-01T10:00:00Z",
+  draft: {
+    language: "en",
+    letter: "Dear First org,\n\nI'd like to join as [role].",
+    answers: [{ question: "Why us?", answer: "Because of your mission." }],
+    gaps: ["Asks for SQL; the CV doesn't mention it"],
+  },
+});
+
 // Portfolio page content for the plain user, as pages_cv.py would write it for
 // a CV whose bytes are "%PDF-1.4 page cv"; page-editor.js uploads that CV, so
 // turning the page on finds it up to date and calls nothing. Written again
@@ -101,6 +116,7 @@ const PAGE_CONTENT = JSON.stringify({
 
 async function resetData() {
   await Bun.write(path.join(dir, "data", "page-content", "7.json"), PAGE_CONTENT);
+  await Bun.write(DRAFT_PATH, DRAFT);
   await Bun.write(files.overrides, "# Browser tests.\n");
   const proc = Bun.spawn(
     ["python3", "-m", "scrapers.overrides", "rebuild",

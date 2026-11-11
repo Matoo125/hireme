@@ -1003,3 +1003,55 @@ main {
   color: var(--accent);
   font-size: var(--text-md);
 }
+
+/* ── Application drafts ──────────────────────────────────────────────────── */
+
+.draft-panel {
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+
+.draft-head,
+.draft-section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.draft-head .cv-status { margin: 0; }
+
+.draft-panel h4 {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.draft-section-head { margin: var(--space-4) 0 var(--space-2); }
+.draft-section-head h4 { margin: 0; }
+
+.draft-letter,
+.draft-text {
+  white-space: pre-wrap;
+  font-size: var(--text-md);
+}
+
+.draft-letter {
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.draft-answer { margin-bottom: var(--space-3); }
+.draft-question { margin: 0 0 var(--space-1); font-weight: var(--weight-bold); font-size: var(--text-sm); }
+.draft-text { margin: 0; }
+
+.draft-gaps {
+  margin: 0;
+  padding-left: var(--space-5);
+  font-size: var(--text-sm);
+  color: var(--warning-fg);
+}

@@ -1038,6 +1038,104 @@ function attachTextField(textarea, jobId, key, toolbar) {
   }).catch((err) => console.warn("Rich-text editor unavailable, using plain text:", err));
 }
 
+// ── Application drafts ───────────────────────────────────────────────────────
+//
+// application_draft.py writes a cover letter, answers to the posting's
+// questions and what the CV doesn't show, from the CV and the full posting.
+// The draft is shown beside the letter; "Use this letter" copies it in.
+
+const DRAFT_STATUS_TEXT = {
+  "no-cv": "Upload a CV to draft applications from it.",
+  generating: "Drafting from your CV and the posting… (about a minute)",
+  busy: "Another draft is being written; try again in a minute.",
+  stale: "Drafted from an earlier CV. Draft again to use the new one.",
+};
+
+function draftPanel(jobId) {
+  const box = el("div", "draft-panel");
+  const head = el("div", "draft-head");
+  const button = el("button", "btn btn--small", "Draft application");
+  button.type = "button";
+  const info = el("p", "cv-status");
+  head.append(button, info);
+  const body = el("div", "draft-body");
+  box.append(head, body);
+  let polls = 0;
+
+  const show = (data) => {
+    const busy = data.status === "generating";
+    button.disabled = busy || data.status === "no-cv";
+    button.textContent = data.draft ? "Draft again" : "Draft application";
+    info.className = data.error ? "cv-status cv-status--error" : "cv-status";
+    info.textContent = data.error || DRAFT_STATUS_TEXT[data.status] || "";
+    body.replaceChildren();
+    if (data.draft && !busy) body.append(...draftContent(jobId, data));
+    if (busy && polls++ < 40) setTimeout(() => request("GET"), 3000);
+  };
+
+  const request = async (method) => {
+    try {
+      const jwt = await getJwt();
+      const res = await fetch(`/api/applications/${encodeURIComponent(jobId)}/draft`, {
+        method,
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Drafting failed");
+      if (box.isConnected || method === "GET") show(data);
+    } catch (err) {
+      if (err.message === "Session expired") return logout();
+      info.className = "cv-status cv-status--error";
+      info.textContent = err.message;
+    }
+  };
+
+  button.addEventListener("click", () => {
+    polls = 0;
+    request("POST");
+  });
+  request("GET");
+  return box;
+}
+
+function draftContent(jobId, data) {
+  const { draft } = data;
+  const out = [];
+
+  const letterHead = el("div", "draft-section-head");
+  letterHead.append(el("h4", "", "Drafted letter"));
+  const use = el("button", "btn btn--primary btn--small", "Use this letter");
+  use.type = "button";
+  use.addEventListener("click", () => {
+    const current = applications.get(jobId)?.motivationLetter?.trim();
+    if (current && !confirm("Replace your motivation letter with this draft?")) return;
+    closeLiveFields();
+    updateApplication(jobId, "motivationLetter", draft.letter);
+    render();
+  });
+  letterHead.append(use);
+  out.push(letterHead, el("div", "draft-letter", draft.letter));
+
+  if (draft.answers?.length) {
+    out.push(el("h4", "", "Questions the posting asks"));
+    for (const a of draft.answers) {
+      const item = el("div", "draft-answer");
+      item.append(el("p", "draft-question", a.question), el("p", "draft-text", a.answer));
+      out.push(item);
+    }
+  }
+  if (draft.gaps?.length) {
+    out.push(el("h4", "", "What your CV doesn't show"));
+    const list = el("ul", "draft-gaps");
+    for (const g of draft.gaps) list.append(el("li", "", g));
+    out.push(list);
+  }
+  out.push(el("p", "app-meta",
+    `Drafted ${new Date(data.generatedAt).toLocaleString()} from your CV and ${data.fromPosting ? "the full posting" : "the listing"}. ` +
+    "Check every claim, and fill in anything in [brackets]."));
+  return out;
+}
+
 async function saveApplication(jobId, data) {
   applications.set(jobId, data);
   saveAppsToStorage();
@@ -1767,6 +1865,8 @@ function jobCard(job) {
     letterArea.setAttribute("aria-label", "Motivation letter");
     panel.appendChild(letterArea);
     attachTextField(letterArea, job.id, "motivationLetter", LETTER_TOOLBAR);
+
+    if (isLoggedIn()) panel.appendChild(draftPanel(job.id));
 
     // Tracked-since timestamp
     if (appData.createdAt) {

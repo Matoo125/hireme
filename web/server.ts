@@ -2,7 +2,7 @@
 // reading the jobs CSV produced by scrape_80000hours_jobs.py.
 
 import path from "path";
-import { mkdir, stat, unlink } from "fs/promises";
+import { mkdir, rm, stat, unlink } from "fs/promises";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { fetchPage, FetchError } from "./lib/fetch-page";
 import { parseRows } from "./lib/csv";
@@ -235,6 +235,64 @@ async function adviceStatus(userId: number) {
     generatedAt: saved?.generatedAt ?? null,
     jobTitles: saved?.jobTitles ?? {},
     advice: status === "no-cv" ? null : (saved?.advice ?? null),
+  };
+}
+
+// ── Application drafts ───────────────────────────────────────────────────────
+
+// application_draft.py writes a cover letter, answers to the posting's
+// questions and the CV's gaps for one job (data/drafts/<user>/<job>.json).
+// One run per user at a time; the last failure is kept to show the user.
+const DRAFTS_DIR = path.join(DATA_DIR, "drafts");
+const draftJobs = new Map<number, string>(); // user id → job id being drafted
+const draftErrors = new Map<string, string>(); // "<user>/<job>" → message
+const DRAFT_JOB_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+function startDraft(userId: number, jobId: string): void {
+  draftJobs.set(userId, jobId);
+  const key = `${userId}/${jobId}`;
+  draftErrors.delete(key);
+  const failed = "Drafting failed. Try again in a few minutes.";
+  try {
+    const proc = Bun.spawn(
+      ["python3", "application_draft.py", "--user", String(userId), "--job", jobId, "--jobs", CSV_PATH, "--data-dir", DATA_DIR, "--force"],
+      { cwd: REPO_DIR, stdout: "pipe", stderr: "pipe" }
+    );
+    Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited])
+      .then(([stdout, stderr, code]) => {
+        if (code !== 0) {
+          console.error(`Draft for user ${userId}, job ${jobId} failed: ${stderr.trim()}`);
+          draftErrors.set(key, failed);
+        } else if (stdout.includes("not found")) {
+          draftErrors.set(key, "This job is no longer listed, so there's nothing to draft from.");
+        } else if (stdout.includes("CV changed")) {
+          draftErrors.set(key, "Your CV changed while drafting. Try again.");
+        }
+      })
+      .finally(() => draftJobs.delete(userId));
+  } catch (exc) {
+    console.error(`Draft for user ${userId} could not start: ${exc}`);
+    draftErrors.set(key, failed);
+    draftJobs.delete(userId);
+  }
+}
+
+async function draftStatus(userId: number, jobId: string) {
+  const pdf = Bun.file(cvPdfPath(userId));
+  const file = Bun.file(path.join(DRAFTS_DIR, String(userId), `${jobId}.json`));
+  const saved = (await file.exists()) ? await file.json() : null;
+  let status: "no-cv" | "generating" | "busy" | "none" | "ready" | "stale";
+  if (!(await pdf.exists())) status = "no-cv";
+  else if (draftJobs.get(userId) === jobId) status = "generating";
+  else if (!saved) status = draftJobs.has(userId) ? "busy" : "none";
+  // "stale": made from an earlier CV, still shown until the user asks again.
+  else status = saved.cv === cvHash(new Uint8Array(await pdf.arrayBuffer())) ? "ready" : "stale";
+  return {
+    status,
+    error: draftErrors.get(`${userId}/${jobId}`) ?? null,
+    generatedAt: saved?.generatedAt ?? null,
+    fromPosting: saved?.fromPosting ?? false,
+    draft: status === "no-cv" ? null : (saved?.draft ?? null),
   };
 }
 
@@ -876,6 +934,8 @@ Bun.serve({
         pageErrors.delete(user.id);
         // So was the advice, which quotes it.
         try { await unlink(path.join(ADVICE_DIR, `${user.id}.json`)); } catch {}
+        // And the application drafts.
+        await rm(path.join(DRAFTS_DIR, String(user.id)), { recursive: true, force: true });
         return Response.json({ ok: true });
       }
 
@@ -959,6 +1019,26 @@ Bun.serve({
         "rejected",
         "withdrawn",
       ];
+
+      // GET /api/applications/:jobId/draft → {status, error, generatedAt, fromPosting, draft}
+      // POST: draft (again) from the CV; one job per user at a time.
+      const draftFor = url.pathname.match(/^\/api\/applications\/([^/]+)\/draft$/)?.[1];
+      if (draftFor !== undefined) {
+        if (!DRAFT_JOB_ID.test(draftFor)) return Response.json({ error: "Unknown job" }, { status: 404 });
+        if (req.method === "GET") return Response.json(await draftStatus(user.id, draftFor));
+        if (req.method === "POST") {
+          if (!(await Bun.file(cvPdfPath(user.id)).exists())) {
+            return Response.json({ error: "Upload a CV first" }, { status: 400 });
+          }
+          const running = draftJobs.get(user.id);
+          if (running && running !== draftFor) {
+            return Response.json({ error: "Another draft is being written; try again in a minute" }, { status: 409 });
+          }
+          if (!running) startDraft(user.id, draftFor);
+          return Response.json(await draftStatus(user.id, draftFor));
+        }
+        return new Response("Method not allowed", { status: 405 });
+      }
 
       const jobId = url.pathname.slice("/api/applications/".length);
 
