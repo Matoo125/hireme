@@ -24,6 +24,7 @@
 // tests can make corrections without affecting each other. Exits non-zero if
 // any check fails. CHROMIUM picks the browser binary (default: chromium).
 
+import { pythonFor } from "../../lib/python";
 import { mkdtemp, readdir, rm, copyFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
@@ -32,6 +33,7 @@ import { generateKeyPair, exportJWK, SignJWT } from "jose";
 const HERE = import.meta.dir;
 const WEB = path.join(HERE, "..", "..");
 const REPO = path.join(WEB, "..");
+const PYTHON = pythonFor(REPO);
 
 async function freePort(): Promise<number> {
   const server = Bun.serve({ port: 0, fetch: () => new Response() });
@@ -119,7 +121,7 @@ async function resetData() {
   await Bun.write(DRAFT_PATH, DRAFT);
   await Bun.write(files.overrides, "# Browser tests.\n");
   const proc = Bun.spawn(
-    ["python3", "-m", "scrapers.overrides", "rebuild",
+    [PYTHON, "-m", "scrapers.overrides", "rebuild",
       "--scraped", files.scraped, "--overrides", files.overrides, "--jobs", files.jobs],
     { cwd: REPO, stdout: "ignore", stderr: "pipe" }
   );

@@ -37,6 +37,8 @@ if [ -n "$ANTHROPIC_API_KEY" ]; then export ANTHROPIC_API_KEY; else unset ANTHRO
 RESEND_API_KEY=${RESEND_API_KEY:-$(from_env_file RESEND_API_KEY)}
 DIGEST_FROM=${DIGEST_FROM:-$(from_env_file DIGEST_FROM)}
 [ -n "$DIGEST_FROM" ] && export DIGEST_FROM
+# The project's virtualenv (`uv sync`), with the locked dependencies, if there is one.
+if [ -x .venv/bin/python ]; then PYTHON=${PYTHON:-.venv/bin/python}; else PYTHON=${PYTHON:-python3}; fi
 BUN=${BUN:-$(command -v bun || echo "$HOME/.bun/bin/bun")}
 
 # Ping Healthchecks.io at $1 (a suffix of the check's URL); extra arguments go
@@ -58,7 +60,7 @@ scrape_and_sync() {
     flock 9
 
     # Unbuffered, so stdout and stderr stay in order through the pipe to tee.
-    PYTHONUNBUFFERED=1 python3 scrape_jobs.py -o jobs.csv
+    PYTHONUNBUFFERED=1 "$PYTHON" scrape_jobs.py -o jobs.csv
     local scrape_status=$?
 
     REPO_ROOT=$(git rev-parse --show-toplevel)
@@ -80,7 +82,7 @@ scrape_and_sync() {
 
     if [ -n "$FIT_USER_IDS" ]; then
         exec 9>&-  # release the jobs lock: scoring only reads jobs.csv
-        if ! PYTHONUNBUFFERED=1 python3 fit_scores.py; then
+        if ! PYTHONUNBUFFERED=1 "$PYTHON" fit_scores.py; then
             echo "!!! fit scoring had failures (unscored jobs are retried next run)" >&2
             [ "$scrape_status" -eq 0 ] && scrape_status=1
         fi
