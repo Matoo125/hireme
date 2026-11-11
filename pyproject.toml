@@ -1,0 +1,15 @@
+[project]
+name = "hireme"
+version = "0.1.0"
+description = "Scrapes EA-adjacent job boards and scores, drafts and tracks applications."
+requires-python = ">=3.11"
+# pydantic is imported directly (structured output schemas), not only via anthropic.
+dependencies = [
+    "anthropic>=2.3,<3",
+    "pydantic>=2,<3",
+    "requests>=2.31,<3",
+]
+
+[tool.uv]
+# Scripts, not an installable package: `uv sync` only makes .venv.
+package = false

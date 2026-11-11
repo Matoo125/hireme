@@ -2,6 +2,7 @@
 // fixture (98 jobs, every board and kind of salary) in a temp dir, then tests
 // lib/api-v1.ts directly and the server's CORS / ETag / rate-limit wrapping.
 
+import { pythonFor } from "../lib/python";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm, copyFile } from "fs/promises";
 import { tmpdir } from "os";
@@ -12,6 +13,7 @@ import { facets, handleV1, queryJobs, toJob } from "../lib/api-v1";
 
 const WEB = path.join(import.meta.dir, "..");
 const REPO = path.join(WEB, "..");
+const PYTHON = pythonFor(REPO);
 
 let dir: string;
 let jobsCsv: string;
@@ -25,7 +27,7 @@ beforeAll(async () => {
   await copyFile(path.join(WEB, "tests", "browser", "fixture", "scraped.json"), scraped);
   await Bun.write(path.join(dir, "overrides.toml"), "");
   const proc = Bun.spawn(
-    ["python3", "-m", "scrapers.overrides", "rebuild",
+    [PYTHON, "-m", "scrapers.overrides", "rebuild",
       "--scraped", scraped, "--overrides", path.join(dir, "overrides.toml"), "--jobs", jobsCsv],
     { cwd: REPO, stdout: "ignore", stderr: "pipe" }
   );
