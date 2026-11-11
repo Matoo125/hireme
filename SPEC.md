@@ -219,7 +219,10 @@ tag or source board, and the like/not-relevant triage state described in §3.
   `PAGES_DOMAIN` (default `hireme.sk`) and `DATA_DIR` (default `data/`) override the defaults.
 - CI: GitHub Actions (`.github/workflows/ci.yml`) runs the Python unit tests, the API tests and
   the browser tests on pushes to `main` and on PRs, skipping pushes that only touch `jobs.csv` or
-  Markdown. Python dependencies are in `requirements.txt` (only `requests`).
+  Markdown. Python dependencies are in `pyproject.toml`, locked in `uv.lock`; CI runs `uv sync --locked`.
+- **Python on the server**: run `uv sync` in the checkout after each pull. The web server
+  (`web/lib/python.ts`) and `scrape_and_sync.sh` then use `.venv/bin/python`; without `.venv`
+  they fall back to `python3`, and `PYTHON` overrides both.
 
 ## 7. Known gaps
 

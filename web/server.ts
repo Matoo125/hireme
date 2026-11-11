@@ -6,6 +6,7 @@ import { mkdir, rm, stat, unlink } from "fs/promises";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { fetchPage, FetchError } from "./lib/fetch-page";
 import { parseRows } from "./lib/csv";
+import { pythonFor } from "./lib/python";
 import { handleV1 } from "./lib/api-v1";
 import {
   cleanEdit, cvHash, findPage, openToWorkPeople, readContent, renderPeople, searchPeople, readSettings, removeContent, renderNotFound, renderPage,
@@ -53,6 +54,7 @@ const ADMIN_USER_IDS = new Set(
   (process.env.ADMIN_USER_IDS ?? "").split(",").map((s) => s.trim()).filter(Boolean).map(Number)
 );
 const REPO_DIR = path.join(ROOT, "..");
+const PYTHON = pythonFor(REPO_DIR);
 const OVERRIDES_PATH = process.env.OVERRIDES_PATH ?? path.join(REPO_DIR, "overrides.toml");
 const SCRAPED_PATH = process.env.SCRAPED_JSON ?? path.join(REPO_DIR, "data", "scraped.json");
 // Commit and push each correction (production), so the checkout stays clean
@@ -90,7 +92,7 @@ function setOverrides(
   const run = async () => {
     const proc = Bun.spawn(
       [
-        "python3", "-m", "scrapers.overrides", "set", jobId,
+        PYTHON, "-m", "scrapers.overrides", "set", jobId,
         "--jobs", CSV_PATH, "--overrides", OVERRIDES_PATH, "--scraped", SCRAPED_PATH,
         ...(OVERRIDES_COMMIT ? ["--commit"] : []),
       ],
@@ -199,7 +201,7 @@ function startAdvice(userId: number): void {
   adviceErrors.delete(userId);
   try {
     const proc = Bun.spawn(
-      ["python3", "cv_advice.py", "--user", String(userId), "--jobs", CSV_PATH, "--data-dir", DATA_DIR],
+      [PYTHON, "cv_advice.py", "--user", String(userId), "--jobs", CSV_PATH, "--data-dir", DATA_DIR],
       { cwd: REPO_DIR, stdout: "pipe", stderr: "pipe" }
     );
     Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited])
@@ -255,7 +257,7 @@ function startDraft(userId: number, jobId: string): void {
   const failed = "Drafting failed. Try again in a few minutes.";
   try {
     const proc = Bun.spawn(
-      ["python3", "application_draft.py", "--user", String(userId), "--job", jobId, "--jobs", CSV_PATH, "--data-dir", DATA_DIR, "--force"],
+      [PYTHON, "application_draft.py", "--user", String(userId), "--job", jobId, "--jobs", CSV_PATH, "--data-dir", DATA_DIR, "--force"],
       { cwd: REPO_DIR, stdout: "pipe", stderr: "pipe" }
     );
     Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited])
@@ -325,7 +327,7 @@ function startPageContent(userId: number, force = false): void {
   };
   try {
     const proc = Bun.spawn(
-      ["python3", "pages_cv.py", "--user", String(userId), "--data-dir", DATA_DIR, ...(force ? ["--force"] : [])],
+      [PYTHON, "pages_cv.py", "--user", String(userId), "--data-dir", DATA_DIR, ...(force ? ["--force"] : [])],
       { cwd: REPO_DIR, stdout: "pipe", stderr: "pipe" }
     );
     Promise.all([new Response(proc.stderr).text(), proc.exited])
