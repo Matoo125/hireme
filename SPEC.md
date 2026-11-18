@@ -173,6 +173,7 @@ copy from: Algolia-backed (`eighty_thousand_hours.py`), SSR-embedded JSON
 | GET/PUT/DELETE | `/api/digest` | GET → `{email, status, minFit, scored, available}`, `status` `off`, `pending` (not confirmed) or `on`; `available` false without `RESEND_API_KEY`. PUT `{email}` sends a confirmation email for a new or still unconfirmed address (an already confirmed one: no email). 400 bad address, 429 over the confirmation limit, 502 if Resend fails, 503 without a key. DELETE stops the digest. Auth required. |
 | GET/POST | `/digest/confirm/<token>`, `/digest/unsubscribe/<token>` | Public, the token is the secret. GET: a page with a button; POST: confirm or unsubscribe. An unknown confirm token → 404 page; an unknown unsubscribe token → 200 ("not subscribed"). |
 | GET | `/feed/<token>.xml` | Public, no login: the token is the secret. RSS of that user's new, well-fitting jobs (§3); 404 for an unknown token. `Cache-Control: private, max-age=300`. |
+| GET | `/internal/tls-ask?domain=` | For Caddy's on-demand TLS (§6), not for clients: 200 if `domain` is `<slug>.hireme.sk` for a slug a user holds, else 404. |
 | any | `<slug>.hireme.sk/` | Not the API: Host routing. The published page for that slug; 404 if it's off, has no content yet, or the path isn't `/`. Other paths on that host are never the job board. |
 | GET | `/api/custom-jobs` | 200, this user's custom jobs as a JSON array. Auth required. |
 | POST | `/api/custom-jobs` | Body `{link, title?, organization_name?}` → fetches the link for a title if omitted, 201 with the created `CustomJob` (or 200 with the existing one if the normalized link was already added); 400 on an invalid/non-http(s) URL. Auth required. |
@@ -211,10 +212,13 @@ tag or source board, and the like/not-relevant triage state described in §3.
   `scrape_and_sync.sh` pings Healthchecks.io at `/start` and at `/<exit status>` with the last
   100 kB of the log; the check (cron `0 6 * * *`, 1 h grace) emails on a failed, hung or missing
   run. Ping failures are logged and never fail the run. Unset = no pings.
-- **Portfolio pages** need a wildcard DNS record `*.hireme.sk` pointing at the server and a wildcard
-  certificate. Caddy only issues wildcard certificates through a DNS challenge, so the site block
-  is `*.hireme.sk { tls { dns <provider> } reverse_proxy localhost:4020 }`, with that provider's
-  Caddy plugin. Without it a page subdomain gets a certificate error. `pages_cv.py` needs
+- **Portfolio pages** need a wildcard DNS record `*.hireme.sk` (A, to the server) at Websupport and
+  a certificate per page from Caddy's on-demand TLS, since this Caddy has no DNS-challenge plugin
+  for a wildcard one: a global `{ on_demand_tls { ask http://localhost:4020/internal/tls-ask } }`
+  block and `*.hireme.sk { tls { on_demand } reverse_proxy localhost:4020 }`. The `ask` endpoint
+  (`tlsAllowed`, `web/lib/pages.ts`) answers 200 only for `<slug>.hireme.sk` where a user holds the
+  slug (page on or off), so made-up names get no certificate. A page's first visit waits a few
+  seconds for its certificate. `pages_cv.py` needs
   `ANTHROPIC_API_KEY` in the server's environment, as `fit_scores.py` does for the timer.
   `PAGES_DOMAIN` (default `hireme.sk`) and `DATA_DIR` (default `data/`) override the defaults.
 - CI: GitHub Actions (`.github/workflows/ci.yml`) runs the Python unit tests, the API tests and

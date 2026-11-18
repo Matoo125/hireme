@@ -362,7 +362,7 @@ it off takes it down (the address stays theirs).
 By hand: `python3 pages_cv.py --user <id> --dry-run` says whether the page
 would be remade, and `python3 -m unittest tests.test_pages_cv` tests the
 extraction with a stand-in for Claude. Setup needs a wildcard DNS record and
-certificate (see `SPEC.md` §6).
+Caddy's on-demand TLS (see `SPEC.md` §6).
 
 ## Job feed (RSS)
 

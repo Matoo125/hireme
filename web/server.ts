@@ -9,7 +9,7 @@ import { parseRows } from "./lib/csv";
 import { handleV1 } from "./lib/api-v1";
 import {
   cleanEdit, cvHash, findPage, openToWorkPeople, readContent, renderPeople, searchPeople, readSettings, removeContent, renderNotFound, renderPage,
-  slugFromHost, slugOwner, slugProblem, writeContent, writeSettings, type PageOptions, type PageSettings,
+  slugFromHost, slugOwner, slugProblem, tlsAllowed, writeContent, writeSettings, type PageOptions, type PageSettings,
 } from "./lib/pages";
 import {
   DEFAULT_MIN_FIT, feedItems, findFeed, newToken, readFeed, removeFeed, renderFeed, writeFeed,
@@ -711,6 +711,13 @@ Bun.serve({
     // ── Portfolio pages: <slug>.hireme.sk ──────────────────────────────────
     const pageSlug = slugFromHost(req.headers.get("host"), PAGES_DOMAIN);
     if (pageSlug) return servePage(pageSlug, req);
+
+    // Caddy's on-demand TLS check for *.hireme.sk: 200 lets it get a
+    // certificate for ?domain=, anything else refuses (lib/pages.ts tlsAllowed).
+    if (url.pathname === "/internal/tls-ask" && req.method === "GET") {
+      const ok = await tlsAllowed(DATA_DIR, url.searchParams.get("domain"), PAGES_DOMAIN);
+      return new Response(ok ? "ok" : "no", { status: ok ? 200 : 404 });
+    }
 
     if (url.pathname === "/people" && req.method === "GET") return servePeople(url);
 

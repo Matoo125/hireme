@@ -7,7 +7,7 @@ import { tmpdir } from "os";
 import path from "path";
 import {
   cleanEdit, cvHash, findPage, openToWorkPeople, renderNotFound, renderPeople, searchPeople, renderPage, removeContent, slugFromHost, slugOwner,
-  slugProblem, writeSettings, type PageContent,
+  slugProblem, tlsAllowed, writeSettings, type PageContent,
 } from "../lib/pages";
 
 const DOMAIN = "hireme.sk";
@@ -234,6 +234,16 @@ describe("storage lookups", () => {
     expect(await slugOwner(dir, "jane")).toBe(1);
     expect(await slugOwner(dir, "off-page")).toBe(2);
     expect(await slugOwner(dir, "free")).toBeNull();
+  });
+
+  test("tlsAllowed: certificates only for held addresses on the pages domain", async () => {
+    expect(await tlsAllowed(dir, "jane.hireme.sk", DOMAIN)).toBe(true);
+    expect(await tlsAllowed(dir, "off-page.hireme.sk", DOMAIN)).toBe(true);
+    expect(await tlsAllowed(dir, "free.hireme.sk", DOMAIN)).toBe(false);
+    expect(await tlsAllowed(dir, "hireme.sk", DOMAIN)).toBe(false);
+    expect(await tlsAllowed(dir, "a.jane.hireme.sk", DOMAIN)).toBe(false);
+    expect(await tlsAllowed(dir, "jane.example.org", DOMAIN)).toBe(false);
+    expect(await tlsAllowed(dir, null, DOMAIN)).toBe(false);
   });
 
   test("findPage serves only enabled pages that have content", async () => {

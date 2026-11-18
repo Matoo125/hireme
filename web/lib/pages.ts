@@ -117,6 +117,15 @@ export async function slugOwner(dir: string, slug: string): Promise<number | nul
   return match ? match.userId : null;
 }
 
+/** Whether Caddy may get a certificate for `domain` (its on-demand TLS `ask`):
+ * only <slug>.<pagesDomain> for a slug some user holds, even with their page
+ * off, so strangers can't make it request certificates for made-up names. */
+export async function tlsAllowed(dir: string, domain: string | null, pagesDomain: string): Promise<boolean> {
+  const slug = slugFromHost(domain, pagesDomain);
+  if (!slug || slugProblem(slug)) return false;
+  return (await slugOwner(dir, slug)) !== null;
+}
+
 export async function writeContent(dir: string, userId: number, page: PageContent): Promise<void> {
   await Bun.write(contentPath(dir, userId), JSON.stringify(page, null, 1));
 }
