@@ -114,6 +114,15 @@ class DraftApplication(unittest.TestCase):
         self.assertEqual(saved["draft"]["deadline"], "15 January 2027")
         self.assertEqual(saved["version"], 2)
 
+    def test_checklist_fits_what_the_server_accepts_as_ticks(self):
+        # PUT /api/applications refuses `checked` past 50 items of 300 characters.
+        draft = {**DRAFT, "checklist": ["x" * 400] + [f"item {i}" for i in range(60)]}
+        self.run_draft(client=FakeClient(draft=draft))
+        checklist = self.saved()["draft"]["checklist"]
+        self.assertEqual(len(checklist), 50)
+        self.assertTrue(all(len(item) <= 300 for item in checklist))
+        self.assertTrue(checklist[0].endswith("…"))
+
     def test_skips_when_cv_and_job_are_unchanged_unless_forced(self):
         self.run_draft(client=FakeClient())
         client = FakeClient()

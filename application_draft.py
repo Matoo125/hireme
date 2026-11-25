@@ -36,6 +36,9 @@ from scrapers import postings
 MODEL = "claude-opus-5-5"
 # Bumped when the schema or prompt changes, so the same CV and job get a new draft.
 DRAFT_VERSION = 2
+# The limits PUT /api/applications puts on `checked` (web/server.ts).
+MAX_CHECKLIST = 50
+MAX_CHECK_ITEM = 300
 JOB_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 SYSTEM = """You help one job seeker apply to one job. You get their CV and the
@@ -140,7 +143,12 @@ def make_draft(client, cv_pdf, job, posting="", answers=()):
     )
     if response.stop_reason != "end_turn" or response.parsed_output is None:
         raise ValueError(f"no draft ({response.stop_reason})")
-    return response.parsed_output.model_dump()
+    draft = response.parsed_output.model_dump()
+    # Ticked items are saved as `checked`, which the server takes up to
+    # MAX_CHECKLIST items of MAX_CHECK_ITEM characters.
+    draft["checklist"] = [item if len(item) <= MAX_CHECK_ITEM else item[:MAX_CHECK_ITEM - 1] + "…"
+                          for item in draft["checklist"][:MAX_CHECKLIST]]
+    return draft
 
 
 def draft_path(data_dir, user_id, job_id):

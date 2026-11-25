@@ -74,7 +74,9 @@ await Bun.write(path.join(fitDir, "7.json"), JSON.stringify({ cv: "x", model: "t
 
 // CV advice for the plain user, as cv_advice.py would write it for a CV whose
 // bytes are "%PDF-1.4 test cv"; cv-advice.js uploads that CV and checks it shows.
-await Bun.write(path.join(dir, "data", "cv-advice", "7.json"), JSON.stringify({
+// Written again before every test, since deleting a CV deletes it.
+const ADVICE_PATH = path.join(dir, "data", "cv-advice", "7.json");
+const ADVICE = JSON.stringify({
   cv: new Bun.CryptoHasher("sha256").update("%PDF-1.4 test cv").digest("hex"),
   model: "test", version: 1, jobs: [fixtureIds[0]], generatedAt: "2026-11-01T10:00:00Z",
   jobTitles: { [fixtureIds[0]]: "First job – First org" },
@@ -84,7 +86,7 @@ await Bun.write(path.join(dir, "data", "cv-advice", "7.json"), JSON.stringify({
     suggestions: [{ title: "Lead with policy work", where: "Summary", change: "Move it first.",
       why: "These are policy roles.", job_ids: [fixtureIds[0]] }],
   },
-}));
+});
 
 // An application draft for the plain user and the first fixture job, as
 // application_draft.py would write it for a CV whose bytes are "%PDF-1.4 draft cv".
@@ -98,6 +100,23 @@ const DRAFT = JSON.stringify({
     letter: "Dear First org,\n\nI'd like to join as [role].",
     answers: [{ question: "Why us?", answer: "Because of your mission." }],
     gaps: ["Asks for SQL; the CV doesn't mention it"],
+  },
+});
+
+// A version-2 draft (with checklist and deadline) for the second fixture job,
+// from the same CV and no saved answers; application-kit.js checks the kit.
+const KIT_DRAFT_PATH = path.join(dir, "data", "drafts", "7", `${fixtureIds[1]}.json`);
+const KIT_DRAFT = JSON.stringify({
+  cv: new Bun.CryptoHasher("sha256").update("%PDF-1.4 draft cv").digest("hex"),
+  model: "test", version: 2, answers: new Bun.CryptoHasher("sha256").update("[]").digest("hex"),
+  job: fixtureIds[1], fromPosting: true, generatedAt: "2026-11-01T10:00:00Z",
+  draft: {
+    language: "en",
+    letter: "Dear Second org,\n\nKit letter.",
+    answers: [{ question: "Why us?", answer: "Your mission." }],
+    gaps: [],
+    checklist: ["CV", "Work sample"],
+    deadline: "15 January 2027",
   },
 });
 
@@ -119,6 +138,10 @@ const PAGE_CONTENT = JSON.stringify({
 async function resetData() {
   await Bun.write(path.join(dir, "data", "page-content", "7.json"), PAGE_CONTENT);
   await Bun.write(DRAFT_PATH, DRAFT);
+  await Bun.write(KIT_DRAFT_PATH, KIT_DRAFT);
+  await Bun.write(ADVICE_PATH, ADVICE);
+  // A test that stops early can leave its CV behind; every test uploads its own.
+  for (const ext of ["pdf", "json"]) await rm(path.join(dir, "data", "cv", `7.${ext}`), { force: true });
   await Bun.write(files.overrides, "# Browser tests.\n");
   const proc = Bun.spawn(
     [PYTHON, "-m", "scrapers.overrides", "rebuild",

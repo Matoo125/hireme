@@ -1100,6 +1100,11 @@ Bun.serve({
         if (body.status && !VALID_STATUSES.includes(body.status)) {
           return Response.json({ error: "Invalid status" }, { status: 400 });
         }
+        // The kit's checklist items the user ticked.
+        if (body.checked !== undefined && !(Array.isArray(body.checked) && body.checked.length <= 50
+            && body.checked.every((c: unknown) => typeof c === "string" && c.length <= 300))) {
+          return Response.json({ error: "checked must be a list of at most 50 items" }, { status: 400 });
+        }
         await mkdir(APPS_DIR, { recursive: true });
         const file = Bun.file(appsPath(user.id));
         const apps: Record<string, any> = (await file.exists())
@@ -1112,6 +1117,7 @@ Bun.serve({
           notes: body.notes ?? existing?.notes ?? "",
           motivationLetter:
             body.motivationLetter ?? existing?.motivationLetter ?? "",
+          checked: body.checked ?? existing?.checked ?? [],
           createdAt: existing?.createdAt ?? now,
           updatedAt: now,
         };
