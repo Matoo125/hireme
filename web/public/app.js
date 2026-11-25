@@ -1950,6 +1950,26 @@ function jobCard(job) {
     trackBtn.title = isTracked ? "Remove from tracked" : "Track this application";
     trackBtn.addEventListener("click", () => toggleTracked(job.id));
     actions.appendChild(trackBtn);
+    // Outside the Tracked view (whose panel has its own), the status can be
+    // changed right where the job is found.
+    if (isTracked && viewEl.value !== "tracked") {
+      const status = applications.get(job.id).status;
+      const select = document.createElement("select");
+      select.className = `card-status-select app-badge--${status}`;
+      select.setAttribute("aria-label", "Application status");
+      for (const s of VALID_STATUSES) {
+        const opt = document.createElement("option");
+        opt.value = s;
+        opt.textContent = STATUS_LABELS[s];
+        select.appendChild(opt);
+      }
+      select.value = status;
+      select.addEventListener("change", () => {
+        updateApplication(job.id, "status", select.value);
+        select.className = `card-status-select app-badge--${select.value}`;
+      });
+      actions.appendChild(select);
+    }
   }
 
   if (job.source === "custom") {
