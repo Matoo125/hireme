@@ -206,7 +206,8 @@ field, with Ctrl/Alt/Cmd held, or in the table layout (which has its own keys). 
 sources, view and a chosen sort are kept in the query string (`?q=&tag=&source=&view=&sort=`,
 only non-defaults) so a search can be bookmarked or shared; unknown values are ignored. When
 nothing is shown, the empty state explains an empty view (liked, tracked…) with a way back to all
-jobs, or offers a button per active filter that removes it, labelled with how many jobs that brings back.
+jobs, or offers a button per active filter that removes it, labelled with how many jobs that brings back. A tracked job's card shows its status as a
+small select in every view but Tracked (whose panel has its own).
 
 ## 6. Deployment
 
