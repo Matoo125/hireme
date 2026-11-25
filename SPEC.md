@@ -195,7 +195,11 @@ changes, so a fresh scrape or hand correction is visible without restarting the 
 Design system (`public/tokens.css`, reference page `/design.html`): every color (light and dark), type size, space step, radius and the shared components (`.btn` with `--primary/--danger/--quiet/--link/--small`, `.input`, `.field`, `.chip`, `.badge`, `.notice`, `.card`) are defined there once. `style.css` (the board) uses only its tokens; portfolio pages and `/people` inline the file into their `<style>` (their CSP allows no stylesheet links). Emails keep literal inline styles, since mail clients don't support CSS variables. No UI framework.
 
 Frontend (`public/app.js`): client-side search, sort (newest/oldest/closing soon/org), filter by
-tag or source board, and the like/not-relevant triage state described in §3.
+tag or source board, and the like/not-relevant triage state described in §3. Hiding a job shows
+an Undo notice for 6 seconds (one at a time). In the cards layout the keyboard triages too:
+`j`/`k` select the next/previous job, `l` likes, `h` hides (selecting the job that takes its
+place), `t` tracks (logged in), `o` opens the posting, `u` undoes a hide; ignored while typing in a
+field, with Ctrl/Alt/Cmd held, or in the table layout (which has its own keys).
 
 ## 6. Deployment
 

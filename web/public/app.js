@@ -785,6 +785,8 @@ const downloadCsvEl = document.getElementById("downloadCsv");
 const clearGridFiltersEl = document.getElementById("clearGridFilters");
 
 let jobs = [];
+// The job selected with the keyboard (see Keyboard triage).
+let selectedJobId = null;
 const activeTags = new Set();
 
 // Admins (ADMIN_USER_IDS on the server) can correct scraped values in the
@@ -1408,6 +1410,76 @@ function toggleHidden(id) {
   else hideUndoToast();
 }
 
+// ── Keyboard triage (cards layout) ──────────────────────────────────────────
+// j/k move, l likes, h hides, t tracks, o opens the posting, u undoes a hide.
+// The selection is kept by id (selectedJobId), so it survives the cards being rebuilt.
+
+function selectCard(card) {
+  for (const el of jobsEl.querySelectorAll("article.job.is-selected")) el.classList.remove("is-selected");
+  if (!card) {
+    selectedJobId = null;
+    return;
+  }
+  selectedJobId = card.dataset.id;
+  card.classList.add("is-selected");
+  card.focus({ preventScroll: true });
+  card.scrollIntoView({ block: "nearest" });
+}
+
+function isTypingTarget(el) {
+  return !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+  if (isTypingTarget(e.target) || layoutEl.value === "table") return;
+  const cards = [...jobsEl.querySelectorAll("article.job")];
+  const index = cards.findIndex((c) => c.dataset.id === selectedJobId);
+  const id = index >= 0 ? selectedJobId : null;
+  switch (e.key) {
+    case "j":
+      selectCard(cards[Math.min(index + 1, cards.length - 1)]);
+      break;
+    case "k":
+      selectCard(cards[Math.max(index - 1, 0)]);
+      break;
+    case "l":
+      if (!id) return;
+      toggleLiked(id);
+      selectCard(jobsEl.querySelector(`article.job[data-id="${CSS.escape(id)}"]`));
+      break;
+    case "h": {
+      if (!id) return;
+      toggleHidden(id);
+      // A hidden job usually leaves the list: select whatever took its place.
+      const after = [...jobsEl.querySelectorAll("article.job")];
+      selectCard(after.find((c) => c.dataset.id === id) || after[Math.min(index, after.length - 1)]);
+      break;
+    }
+    case "t":
+      if (!id || !isLoggedIn()) return;
+      toggleTracked(id);
+      selectCard(jobsEl.querySelector(`article.job[data-id="${CSS.escape(id)}"]`));
+      break;
+    case "o": {
+      const link = jobs.find((j) => j.id === id)?.link;
+      if (!link) return;
+      window.open(link, "_blank", "noopener");
+      break;
+    }
+    case "u": {
+      const undo = document.querySelector("#undoToast:not([hidden]) button");
+      if (!undo) return;
+      undo.click();
+      if (selectedJobId) selectCard(jobsEl.querySelector(`article.job[data-id="${CSS.escape(selectedJobId)}"]`));
+      break;
+    }
+    default:
+      return;
+  }
+  e.preventDefault();
+});
+
 // ── Undo after hiding ───────────────────────────────────────────────────────
 // One notice at a time: a new hide replaces it, and it goes away on its own.
 const UNDO_MS = 6000;
@@ -1711,7 +1783,10 @@ function jobCard(job) {
   const isLiked = likedJobs.has(job.id);
   const isHidden = hiddenJobs.has(job.id);
   const isTracked = applications.has(job.id);
-  el.className = "job" + (isLiked ? " is-liked" : "") + (isHidden ? " is-hidden" : "") + (isTracked ? " is-tracked" : "");
+  el.className = "job" + (isLiked ? " is-liked" : "") + (isHidden ? " is-hidden" : "") + (isTracked ? " is-tracked" : "")
+    + (job.id === selectedJobId ? " is-selected" : "");
+  el.dataset.id = job.id;
+  el.tabIndex = -1;
 
   const top = document.createElement("div");
   top.className = "job-top";
@@ -2673,6 +2748,7 @@ function render() {
   jobsEl.hidden = table;
   sheetEl.hidden = !table || !sorted.length;
   detailTogglesEl.hidden = table;
+  document.getElementById("keyboardHint").hidden = table || !sorted.length;
   downloadCsvEl.hidden = !table || !sorted.length;
   // Shown even when the filters leave no rows (and so no grid to undo them in).
   clearGridFiltersEl.hidden = !table || !gridFilters.size;
