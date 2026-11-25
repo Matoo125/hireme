@@ -9,6 +9,7 @@
 import { timingSafeEqual } from "crypto";
 import { readdir, unlink } from "fs/promises";
 import path from "path";
+import { writeFileAtomic } from "./write-file";
 
 export interface FeedSettings {
   token: string;
@@ -47,7 +48,7 @@ export async function readFeed(dir: string, userId: number): Promise<FeedSetting
 }
 
 export async function writeFeed(dir: string, userId: number, feed: FeedSettings): Promise<void> {
-  await Bun.write(feedPath(dir, userId), JSON.stringify(feed, null, 1));
+  await writeFileAtomic(feedPath(dir, userId), JSON.stringify(feed, null, 1));
 }
 
 export async function removeFeed(dir: string, userId: number): Promise<void> {

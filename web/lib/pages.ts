@@ -7,6 +7,7 @@
 import { readdir, unlink } from "fs/promises";
 import path from "path";
 import TOKENS from "../public/tokens.css" with { type: "text" };
+import { writeFileAtomic } from "./write-file";
 
 export interface PageSettings {
   enabled: boolean;
@@ -87,7 +88,7 @@ export async function readSettings(dir: string, userId: number): Promise<PageSet
 }
 
 export async function writeSettings(dir: string, userId: number, settings: PageSettings): Promise<void> {
-  await Bun.write(settingsPath(dir, userId), JSON.stringify(settings, null, 1));
+  await writeFileAtomic(settingsPath(dir, userId), JSON.stringify(settings, null, 1));
 }
 
 export async function readContent(dir: string, userId: number): Promise<PageContent | null> {
@@ -127,7 +128,7 @@ export async function tlsAllowed(dir: string, domain: string | null, pagesDomain
 }
 
 export async function writeContent(dir: string, userId: number, page: PageContent): Promise<void> {
-  await Bun.write(contentPath(dir, userId), JSON.stringify(page, null, 1));
+  await writeFileAtomic(contentPath(dir, userId), JSON.stringify(page, null, 1));
 }
 
 /** The enabled page with this slug, with its owner's id, or null. A page whose

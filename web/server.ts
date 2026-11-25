@@ -1,6 +1,7 @@
 // Minimal Bun server: serves the static frontend and a JSON API
 // reading the jobs CSV produced by scrape_80000hours_jobs.py.
 
+import { writeFileAtomic } from "./lib/write-file";
 import path from "path";
 import { mkdir, rm, stat, unlink } from "fs/promises";
 import { createRemoteJWKSet, jwtVerify } from "jose";
@@ -587,7 +588,7 @@ async function readCustomJobs(userId: number): Promise<CustomJob[]> {
 
 async function writeCustomJobs(userId: number, jobs: CustomJob[]): Promise<void> {
   await mkdir(CUSTOM_JOBS_DIR, { recursive: true });
-  await Bun.write(customJobsPath(userId), JSON.stringify(jobs));
+  await writeFileAtomic(customJobsPath(userId), JSON.stringify(jobs));
 }
 
 // Strips query/UTM params and a trailing slash, mirroring scrapers/dedupe.py's
@@ -903,13 +904,13 @@ Bun.serve({
         }
 
         await mkdir(CV_DIR, { recursive: true });
-        await Bun.write(cvPdfPath(user.id), body);
+        await writeFileAtomic(cvPdfPath(user.id), body);
         const meta: CvMeta = {
           filename,
           size: body.byteLength,
           uploadedAt: new Date().toISOString(),
         };
-        await Bun.write(cvMetaPath(user.id), JSON.stringify(meta));
+        await writeFileAtomic(cvMetaPath(user.id), JSON.stringify(meta));
         if ((await readSettings(DATA_DIR, user.id))?.enabled) startPageContent(user.id);
         return Response.json(meta);
       }
@@ -1001,7 +1002,7 @@ Bun.serve({
         const visits = { last: date(body.visits?.last), previous: date(body.visits?.previous) };
         const data = { liked, hidden, ...(visits.last ? { visits } : {}) };
         await mkdir(PREFS_DIR, { recursive: true });
-        await Bun.write(prefsPath(user.id), JSON.stringify(data));
+        await writeFileAtomic(prefsPath(user.id), JSON.stringify(data));
         return Response.json(data);
       }
 
@@ -1082,7 +1083,7 @@ Bun.serve({
           createdAt: existing?.createdAt ?? now,
           updatedAt: now,
         };
-        await Bun.write(appsPath(user.id), JSON.stringify(apps));
+        await writeFileAtomic(appsPath(user.id), JSON.stringify(apps));
         return Response.json(apps[jobId]);
       }
 
@@ -1092,7 +1093,7 @@ Bun.serve({
         if (await file.exists()) {
           const apps: Record<string, any> = await file.json();
           delete apps[jobId];
-          await Bun.write(appsPath(user.id), JSON.stringify(apps));
+          await writeFileAtomic(appsPath(user.id), JSON.stringify(apps));
         }
         return Response.json({ ok: true });
       }
