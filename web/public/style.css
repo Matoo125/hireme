@@ -567,8 +567,21 @@ main {
 .empty {
   max-width: var(--content-width);
   margin: 2rem auto;
+  padding: 0 var(--space-4);
   text-align: center;
   color: var(--muted);
+}
+.empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+.empty-actions .btn {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Application tracker ──────────────────────────────────────────────── */
