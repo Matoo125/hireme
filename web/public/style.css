@@ -1162,3 +1162,67 @@ article.job.is-selected {
   background: var(--surface);
   color: var(--fg);
 }
+
+/* List / Board switch for the Tracked view */
+.segmented { display: inline-flex; }
+.segmented[hidden] { display: none; }
+.segmented .btn { border-radius: 0; }
+.segmented .btn:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+.segmented .btn:last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; margin-left: -1px; }
+.segmented .btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-soft-fg); }
+
+/* Tracked jobs as a board: a column per status */
+/* Wider than the page's column: six statuses need the room. Centered on it,
+   up to 75rem, never past the viewport's 1rem gutters. */
+.tracked-board {
+  --board-width: min(75rem, calc(100vw - 2rem));
+  width: var(--board-width);
+  margin-inline: calc((100% - var(--board-width)) / 2);
+  display: grid;
+  grid-template-columns: repeat(6, minmax(9.5rem, 1fr));
+  gap: var(--space-3);
+  overflow-x: auto;
+  padding-bottom: var(--space-2);
+}
+.board-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 6rem;
+  padding: var(--space-2);
+  background: var(--surface-sunken);
+  border: 1px dashed transparent;
+  border-radius: var(--radius-md);
+}
+.board-column.drop-target { border-color: var(--accent); }
+.board-head {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  color: var(--muted);
+}
+.board-count { font-weight: normal; }
+.board-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: grab;
+}
+.board-card.dragging { opacity: 0.5; }
+.board-title {
+  color: var(--fg);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.board-title:hover { text-decoration: underline; }
+.board-meta { color: var(--muted); font-size: var(--text-xs); }
+.board-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-1) var(--space-2); }
+@media (max-width: 640px) {
+  .tracked-board { width: auto; margin-inline: 0; grid-template-columns: 1fr; overflow-x: visible; }
+}

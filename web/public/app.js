@@ -2944,6 +2944,124 @@ function renderEmptyState(term) {
   emptyEl.replaceChildren(message, actions);
 }
 
+// ── Tracked jobs as a board ─────────────────────────────────────────────────
+// In the Tracked view (cards layout), a column per status with compact cards,
+// moved by dragging or with each card's status select. Notes and letters stay
+// in the list ("Details" switches to it).
+const TRACKED_LAYOUT_KEY = "jobBoard.trackedLayout";
+const trackedLayoutEl = document.getElementById("trackedLayout");
+let trackedLayout = "list";
+try {
+  trackedLayout = localStorage.getItem(TRACKED_LAYOUT_KEY) === "board" ? "board" : "list";
+} catch {}
+
+function setTrackedLayout(value) {
+  trackedLayout = value;
+  try {
+    localStorage.setItem(TRACKED_LAYOUT_KEY, value);
+  } catch {}
+  render();
+}
+
+function showTrackedBoard() {
+  return viewEl.value === "tracked" && layoutEl.value !== "table" && trackedLayout === "board";
+}
+
+function renderTrackedLayoutSwitch(table) {
+  trackedLayoutEl.hidden = viewEl.value !== "tracked" || table;
+  for (const btn of trackedLayoutEl.querySelectorAll("button")) {
+    btn.setAttribute("aria-pressed", String(btn.dataset.layout === trackedLayout));
+  }
+}
+
+function moveApplication(jobId, status) {
+  if (!VALID_STATUSES.includes(status) || applications.get(jobId)?.status === status) return;
+  updateApplication(jobId, "status", status);
+  render();
+}
+
+function boardCard(job) {
+  const status = applications.get(job.id).status;
+  const card = document.createElement("article");
+  card.className = "board-card";
+  card.dataset.id = job.id;
+  card.draggable = true;
+  card.addEventListener("dragstart", (e) => {
+    e.dataTransfer.setData("text/plain", job.id);
+    e.dataTransfer.effectAllowed = "move";
+    card.classList.add("dragging");
+  });
+  card.addEventListener("dragend", () => card.classList.remove("dragging"));
+
+  const title = document.createElement("a");
+  title.className = "board-title";
+  title.href = job.link || "#";
+  title.target = "_blank";
+  title.rel = "noopener noreferrer";
+  title.textContent = job.title || "Untitled role";
+  const org = document.createElement("div");
+  org.className = "board-meta";
+  org.textContent = [job.organization_name, job.closed ? "Posting closed" : job.close_date ? formatCloses(job.close_date) : ""]
+    .filter(Boolean).join(" · ");
+
+  const select = document.createElement("select");
+  select.className = `card-status-select app-badge--${status}`;
+  select.setAttribute("aria-label", `Status of ${job.title || "this job"}`);
+  for (const s of VALID_STATUSES) select.add(new Option(STATUS_LABELS[s], s));
+  select.value = status;
+  select.addEventListener("change", () => moveApplication(job.id, select.value));
+
+  const details = document.createElement("button");
+  details.type = "button";
+  details.className = "btn btn--link btn--small board-details";
+  details.textContent = "Details";
+  details.addEventListener("click", () => {
+    setTrackedLayout("list");
+    jobsEl.querySelector(`article.job[data-id="${CSS.escape(job.id)}"]`)?.scrollIntoView({ block: "center" });
+  });
+
+  const row = document.createElement("div");
+  row.className = "board-actions";
+  row.append(select, details);
+  card.append(title, org, row);
+  return card;
+}
+
+function trackedBoard(list) {
+  const board = document.createElement("div");
+  board.className = "tracked-board";
+  for (const status of VALID_STATUSES) {
+    const jobsHere = list.filter((j) => applications.get(j.id)?.status === status);
+    const column = document.createElement("section");
+    column.className = "board-column";
+    column.dataset.status = status;
+    column.setAttribute("aria-label", STATUS_LABELS[status]);
+    const head = document.createElement("h3");
+    head.className = "board-head";
+    const count = document.createElement("span");
+    count.className = "board-count";
+    count.textContent = String(jobsHere.length);
+    head.append(`${STATUS_LABELS[status]} `, count);
+    column.append(head, ...jobsHere.map(boardCard));
+    column.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      column.classList.add("drop-target");
+    });
+    column.addEventListener("dragleave", () => column.classList.remove("drop-target"));
+    column.addEventListener("drop", (e) => {
+      e.preventDefault();
+      column.classList.remove("drop-target");
+      moveApplication(e.dataTransfer.getData("text/plain"), status);
+    });
+    board.appendChild(column);
+  }
+  return board;
+}
+
+for (const btn of trackedLayoutEl.querySelectorAll("button")) {
+  btn.addEventListener("click", () => setTrackedLayout(btn.dataset.layout));
+}
+
 function render() {
   writeFiltersToUrl();
   const term = searchEl.value.trim().toLowerCase();
@@ -2982,6 +3100,7 @@ function render() {
   jobsEl.hidden = table;
   sheetEl.hidden = !table || !sorted.length;
   detailTogglesEl.hidden = table;
+  renderTrackedLayoutSwitch(table);
   document.getElementById("keyboardHint").hidden = table || !sorted.length;
   downloadCsvEl.hidden = !table || !sorted.length;
   // Shown even when the filters leave no rows (and so no grid to undo them in).
@@ -2996,6 +3115,10 @@ function render() {
   destroyGrid();
   sheetEl.replaceChildren();
   // Sorted by fit, poor matches fold away below the rest ("For you").
+  if (showTrackedBoard()) {
+    jobsEl.appendChild(trackedBoard(sorted));
+    return;
+  }
   const fold = sortEl.value === "fit_desc";
   const low = fold ? sorted.filter(isLowFit) : [];
   for (const job of fold ? sorted.filter((j) => !isLowFit(j)) : sorted) {

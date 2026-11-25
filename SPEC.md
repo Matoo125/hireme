@@ -222,7 +222,9 @@ sources, view and a chosen sort are kept in the query string (`?q=&tag=&source=&
 only non-defaults) so a search can be bookmarked or shared; unknown values are ignored. When
 nothing is shown, the empty state explains an empty view (liked, tracked…) with a way back to all
 jobs, or offers a button per active filter that removes it, labelled with how many jobs that brings back. A tracked job's card shows its status as a
-small select in every view but Tracked (whose panel has its own).
+small select in every view but Tracked (whose panel has its own). The Tracked view can switch
+(List / Board, remembered per browser) to a board: a column per status with compact cards, moved by
+dragging or with each card's status select; "Details" goes back to the list for notes and letters.
 
 ## 6. Deployment
 
