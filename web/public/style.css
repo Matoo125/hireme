@@ -1091,3 +1091,27 @@ main {
   cursor: pointer;
   padding: var(--space-1) var(--space-2);
 }
+
+/* Job selected with the keyboard (j/k) */
+article.job:focus { outline: none; }
+article.job.is-selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.keyboard-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+.keyboard-hint[hidden] { display: none; }
+.keyboard-hint kbd {
+  font: inherit;
+  padding: 0 0.3em;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--surface);
+}
+/* Phones have no keyboard to use them with. */
+@media (hover: none), (max-width: 640px) {
+  .keyboard-hint { display: none; }
+}
