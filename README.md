@@ -33,7 +33,11 @@ web/
 
 ## Running the scraper
 
-Requires Python 3.11+ and `pip install -r requirements.txt` (`requests`, and `anthropic` for fit scores).
+Python dependencies are managed with [uv](https://docs.astral.sh/uv/): `pyproject.toml` lists
+them and `uv.lock` pins them. `uv sync` makes `.venv/` (Python 3.11+); prefix commands with
+`uv run` (`uv run python3 scrape_jobs.py`), or use `.venv/bin/python`. The web server, the
+scrape script and the tests use `.venv/bin/python` when it exists, else `python3`; `PYTHON`
+overrides both.
 
 ```bash
 python3 scrape_jobs.py                  # writes jobs.csv
@@ -437,11 +441,11 @@ salary_range = "$79,200 - $90,000 per year"
 
 ## Tests
 
-- `python3 -m unittest` (in `tests/`): the scrapers' clean-up,
+- `uv run python -m unittest` (in `tests/`): the scrapers' clean-up,
   deduplication, typed columns, salary parsing and overrides.
 - `cd web && bun test`: the public API (`lib/api-v1.ts`, and the server's
   CORS, ETag and rate limiting), on the browser tests' fixture below. Needs
-  `python3` with `requests`, like the browser tests.
+  `uv sync` first (or `python3` with `requests`), like the browser tests.
 - `cd web && bun run test:browser` (or `bun tests/browser/run.ts grid
   corrections` for some): the web app in headless Chromium, set
   `CHROMIUM` if it isn't on the PATH as `chromium`. The runner starts the
