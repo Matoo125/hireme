@@ -597,7 +597,7 @@ main {
 .action-btn.track-btn.active {
   background: var(--success-solid);
   border-color: var(--success-solid);
-  color: #fff;
+  color: var(--on-solid);
 }
 
 .job.is-tracked {
@@ -634,22 +634,22 @@ main {
 
 .app-badge--applied {
   background: var(--info-solid);
-  color: #fff;
+  color: var(--on-solid);
 }
 
 .app-badge--interviewing {
   background: var(--violet-solid);
-  color: #fff;
+  color: var(--on-solid);
 }
 
 .app-badge--offered {
   background: var(--success-solid);
-  color: #fff;
+  color: var(--on-solid);
 }
 
 .app-badge--rejected {
   background: var(--danger-solid);
-  color: #fff;
+  color: var(--on-solid);
 }
 
 .app-badge--withdrawn {
@@ -1077,42 +1077,6 @@ main {
   color: var(--warning-fg);
 }
 
-/* Undo notice after hiding a job */
-.undo-toast {
-  position: fixed;
-  left: 50%;
-  bottom: var(--space-6);
-  transform: translateX(-50%);
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  max-width: calc(100vw - 2 * var(--space-4));
-  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
-  background: var(--fg);
-  color: var(--bg);
-  border-radius: var(--radius-md);
-  font-size: var(--text-sm);
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.2);
-}
-.undo-toast[hidden] { display: none; }
-.undo-toast span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.undo-toast button {
-  flex: none;
-  background: transparent;
-  border: 0;
-  color: inherit;
-  font: inherit;
-  font-weight: var(--weight-bold);
-  text-decoration: underline;
-  cursor: pointer;
-  padding: var(--space-1) var(--space-2);
-}
-
 /* Job selected with the keyboard (j/k) */
 article.job:focus { outline: none; }
 article.job.is-selected {
@@ -1125,13 +1089,6 @@ article.job.is-selected {
   font-size: var(--text-xs);
 }
 .keyboard-hint[hidden] { display: none; }
-.keyboard-hint kbd {
-  font: inherit;
-  padding: 0 0.3em;
-  border: 1px solid var(--border-strong);
-  border-radius: 3px;
-  background: var(--surface);
-}
 /* Phones have no keyboard to use them with. */
 @media (hover: none), (max-width: 640px) {
   .keyboard-hint { display: none; }
@@ -1162,14 +1119,6 @@ article.job.is-selected {
   background: var(--surface);
   color: var(--fg);
 }
-
-/* List / Board switch for the Tracked view */
-.segmented { display: inline-flex; }
-.segmented[hidden] { display: none; }
-.segmented .btn { border-radius: 0; }
-.segmented .btn:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
-.segmented .btn:last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; margin-left: -1px; }
-.segmented .btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-soft-fg); }
 
 /* Tracked jobs as a board: a column per status */
 /* Wider than the page's column: six statuses need the room. Centered on it,

@@ -1778,7 +1778,7 @@ function undoToastEl() {
   if (!el) {
     el = document.createElement("div");
     el.id = "undoToast";
-    el.className = "undo-toast";
+    el.className = "toast";
     el.setAttribute("role", "status");
     el.hidden = true;
     document.body.appendChild(el);
