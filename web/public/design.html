@@ -82,6 +82,21 @@
     <p class="notice notice--error">Enter a valid email address.</p>
   </div>
 
+  <h2>Segmented control</h2>
+  <div class="row">
+    <span class="segmented" role="group" aria-label="Layout">
+      <button class="btn btn--small" aria-pressed="true">List</button>
+      <button class="btn btn--small" aria-pressed="false">Board</button>
+    </span>
+  </div>
+
+  <h2>Toast</h2>
+  <p class="muted" style="font-size:var(--text-sm)">Fixed to the bottom of the screen; shown here in place.</p>
+  <div class="toast" role="status" style="position:static;transform:none;display:inline-flex"><span>Hidden: Data engineer</span><button type="button">Undo</button></div>
+
+  <h2>Keys</h2>
+  <p style="font-size:var(--text-sm)"><kbd>j</kbd>/<kbd>k</kbd> move · <kbd>Esc</kbd> leaves search</p>
+
   <h2>Card</h2>
   <div class="card">
     <strong>Data engineer</strong>
@@ -89,9 +104,11 @@
   </div>
 </main>
 <script>
-  const names = ["bg", "surface", "surface-sunken", "fg", "muted", "border", "accent", "accent-soft",
-    "success-solid", "success-soft", "warning-solid", "warning-soft", "danger-solid", "danger-soft",
-    "info-solid", "info-soft", "violet-solid", "violet-soft"];
+  const names = ["bg", "surface", "surface-sunken", "fg", "muted", "border", "border-strong",
+    "accent", "accent-hover", "accent-soft", "accent-soft-fg",
+    "success-fg", "success-soft", "success-solid", "warning-fg", "warning-soft", "warning-solid",
+    "danger-fg", "danger-soft", "danger-solid", "info-fg", "info-soft", "info-solid",
+    "violet-fg", "violet-soft", "violet-solid", "neutral-fg", "neutral-soft", "neutral-solid"];
   const root = getComputedStyle(document.documentElement);
   document.getElementById("swatches").append(...names.map((n) => {
     const el = document.createElement("div");
