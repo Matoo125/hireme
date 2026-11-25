@@ -20,7 +20,7 @@ describe("feedItems", () => {
   const scores = {
     a: { score: 80, reason: "A" }, b: { score: 60, reason: "B" }, c: { score: 59, reason: "C" },
     d: { score: 90, reason: "D" }, e: { score: 95, reason: "E" }, f: { score: 70, reason: "F" },
-    g: { score: 99, reason: "G" },
+    g: { score: 99, reason: "G" }, i: { score: 99, reason: "I" },
   };
   const rows = [
     job("a"),
@@ -31,6 +31,7 @@ describe("feedItems", () => {
     job("f", { europe: "unclear" }),
     job("g", { first_seen: "" }),                 // never seen: left out
     job("h"),                                     // unscored
+    job("i", { closed: "2026-10-30" }),           // posting gone
   ];
 
   test("keeps new, well-fitting jobs open to Europe, newest then best first", () => {

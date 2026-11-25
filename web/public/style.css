@@ -249,6 +249,13 @@ main {
   font-variant-numeric: tabular-nums;
 }
 
+/* A job whose posting page is gone. */
+.job-closed {
+  margin: 0.35rem 0 0;
+  font-size: var(--text-sm);
+  color: var(--warning-fg);
+}
+
 /* Shown only when "not open to Europe" jobs are let in. */
 .job-europe {
   margin: 0.35rem 0 0;

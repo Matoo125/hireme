@@ -44,7 +44,7 @@ export function reminderItems(
   for (const row of rows) {
     const app = apps[row.id];
     if (!liked.has(row.id) && !app) continue;
-    if (hidden.has(row.id)) continue;
+    if (hidden.has(row.id) || row.closed) continue;
     if (app && !NOT_APPLIED.has(app.status ?? "interested")) continue;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(row.close_date ?? "")) continue;
     const daysLeft = daysBetween(today, row.close_date);

@@ -30,6 +30,12 @@ describe("reminderItems", () => {
     expect(items.find((i) => i.row.id === "tracked")?.tracked).toBe(true);
   });
 
+  test("not for a job whose posting is gone", () => {
+    const rows = [...ROWS, { ...job("gone", "2026-11-12"), closed: "2026-11-05" }];
+    const items = reminderItems(rows, { ...PREFS, liked: [...PREFS.liked, "gone"] }, APPS, {}, TODAY);
+    expect(ids(items)).not.toContain("gone");
+  });
+
   test("reminds once per close date, again if the deadline moves", () => {
     const first = reminderItems(ROWS, PREFS, APPS, {}, TODAY);
     const digest = recordReminded({ remindedKeys: [] }, first);

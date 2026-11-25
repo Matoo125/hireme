@@ -15,7 +15,8 @@ HTML_TAG_RE = re.compile(r"<[^>]+>")
 # the columns from "salary_min" on are derived after merging, from
 # salary_range (scrapers.salary) and tags (scrapers.tag_fields);
 # "europe" and "europe_reason" are read from the full posting by Claude
-# (scrapers.europe); "corrected" names the columns overrides.toml set
+# (scrapers.europe); "closed" is the date the posting's page was found gone
+# (scrapers.postings.closed_since); "corrected" names the columns overrides.toml set
 # (scrapers.overrides).
 FIELDNAMES = [
     "id",
@@ -44,6 +45,7 @@ FIELDNAMES = [
     "other_tags",
     "europe",
     "europe_reason",
+    "closed",
     "corrected",
 ]
 

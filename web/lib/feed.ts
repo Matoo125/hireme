@@ -93,7 +93,7 @@ export function feedItems(
   return rows
     .filter((row) => {
       const fit = scores[row.id];
-      return fit && fit.score >= minFit && row.europe !== "no" && (row.first_seen ?? "") >= since;
+      return fit && fit.score >= minFit && row.europe !== "no" && !row.closed && (row.first_seen ?? "") >= since;
     })
     .map((row) => ({ row, fit: scores[row.id] }))
     .sort(
