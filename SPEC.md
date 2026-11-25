@@ -201,7 +201,7 @@ Frontend (`public/app.js`): client-side search, sort (newest/oldest/closing soon
 tag or source board, and the like/not-relevant triage state described in §3. Hiding a job shows
 an Undo notice for 6 seconds (one at a time). In the cards layout the keyboard triages too:
 `j`/`k` select the next/previous job, `l` likes, `h` hides (selecting the job that takes its
-place), `t` tracks (logged in), `o` opens the posting, `u` undoes a hide; ignored while typing in a
+place), `t` tracks (logged in), `o` opens the posting, `u` undoes a hide (search is focused on load; `Esc` leaves it); ignored while typing in a
 field, with Ctrl/Alt/Cmd held, or in the table layout (which has its own keys). The search, tags,
 sources, view and a chosen sort are kept in the query string (`?q=&tag=&source=&view=&sort=`,
 only non-defaults) so a search can be bookmarked or shared; unknown values are ignored. When
