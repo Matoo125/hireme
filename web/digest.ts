@@ -1,5 +1,6 @@
-// Send each confirmed digest its new jobs, and a reminder for saved jobs that
-// close soon (lib/reminders.ts): bun run digest.ts [--dry-run]
+// Send each confirmed digest its new jobs, a reminder for saved jobs that
+// close soon (lib/reminders.ts) and a nudge for applications with no news
+// (lib/follow-ups.ts): bun run digest.ts [--dry-run]
 //
 // Run by scrape_and_sync.sh after fit scoring. A user with nothing new gets
 // no email. A failed send leaves that user's jobs unsent for the next run and
@@ -12,6 +13,7 @@ import {
   allDigests, digestEmail, digestItems, readDigest, recordDigestSent, sendEmail, writeDigest, type DigestSettings,
 } from "./lib/digest";
 import { recordReminded, reminderEmail, reminderItems } from "./lib/reminders";
+import { followUpEmail, followUpItems, recordFollowedUp } from "./lib/follow-ups";
 
 const ROOT = import.meta.dir;
 const CSV_PATH = process.env.JOBS_CSV ?? path.join(ROOT, "..", "jobs.csv");
@@ -79,6 +81,13 @@ for (const { userId, digest } of await allDigests(DATA_DIR)) {
   if (due.length) {
     await deliver(userId, digest, reminderEmail(digest.email, due, SITE_URL, unsubscribe),
       (current) => recordReminded(current, due), due.length === 1 ? "1 reminder" : `${due.length} reminders`);
+  }
+
+  // Applications sent a while ago with no news since.
+  const quiet = followUpItems([...rows, ...own], apps, digest, today);
+  if (quiet.length) {
+    await deliver(userId, digest, followUpEmail(digest.email, quiet, SITE_URL, unsubscribe),
+      (current) => recordFollowedUp(current, quiet), quiet.length === 1 ? "1 follow-up" : `${quiet.length} follow-ups`);
   }
 }
 
