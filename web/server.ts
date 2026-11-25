@@ -2,7 +2,7 @@
 // reading the jobs CSV produced by scrape_80000hours_jobs.py.
 
 import { writeFileAtomic } from "./lib/write-file";
-import { STARTER_QUESTIONS, cleanAnswers, readAnswers, writeAnswers, type SavedAnswer } from "./lib/answers";
+import { STARTER_QUESTIONS, answersHash, cleanAnswers, readAnswers, writeAnswers, type SavedAnswer } from "./lib/answers";
 import path from "path";
 import { mkdir, rm, stat, unlink } from "fs/promises";
 import { createRemoteJWKSet, jwtVerify } from "jose";
@@ -286,16 +286,23 @@ async function draftStatus(userId: number, jobId: string) {
   const file = Bun.file(path.join(DRAFTS_DIR, String(userId), `${jobId}.json`));
   const saved = (await file.exists()) ? await file.json() : null;
   let status: "no-cv" | "generating" | "busy" | "none" | "ready" | "stale";
+  let staleAnswers = false;
   if (!(await pdf.exists())) status = "no-cv";
   else if (draftJobs.get(userId) === jobId) status = "generating";
   else if (!saved) status = draftJobs.has(userId) ? "busy" : "none";
-  // "stale": made from an earlier CV, still shown until the user asks again.
-  else status = saved.cv === cvHash(new Uint8Array(await pdf.arrayBuffer())) ? "ready" : "stale";
+  // "stale": made from an earlier CV or other saved answers, still shown until
+  // the user asks again. Drafts from before saved answers had none ([]).
+  else {
+    const sameCv = saved.cv === cvHash(new Uint8Array(await pdf.arrayBuffer()));
+    staleAnswers = (saved.answers ?? answersHash([])) !== answersHash(await readAnswers(DATA_DIR, userId));
+    status = sameCv && !staleAnswers ? "ready" : "stale";
+  }
   return {
     status,
     error: draftErrors.get(`${userId}/${jobId}`) ?? null,
     generatedAt: saved?.generatedAt ?? null,
     fromPosting: saved?.fromPosting ?? false,
+    staleAnswers,
     draft: status === "no-cv" ? null : (saved?.draft ?? null),
   };
 }

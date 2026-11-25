@@ -40,6 +40,13 @@ export function cleanAnswers(body: unknown): SavedAnswer[] {
   });
 }
 
+/** sha256 of the answers as JSON.stringify writes them; application_draft.py
+ * (answers_hash) stores the same in each draft, so a draft made from other
+ * answers can be told apart. */
+export function answersHash(answers: SavedAnswer[]): string {
+  return new Bun.CryptoHasher("sha256").update(JSON.stringify(answers)).digest("hex");
+}
+
 function answersPath(dataDir: string, userId: number): string {
   return path.join(dataDir, "answers", `${userId}.json`);
 }

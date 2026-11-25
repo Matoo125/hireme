@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
-import { STARTER_QUESTIONS, cleanAnswers, readAnswers, writeAnswers } from "../lib/answers";
+import { STARTER_QUESTIONS, answersHash, cleanAnswers, readAnswers, writeAnswers } from "../lib/answers";
 
 describe("cleanAnswers", () => {
   test("trims questions and answers", () => {
@@ -36,6 +36,13 @@ describe("cleanAnswers", () => {
     const max = Array.from({ length: 30 }, (_, i) => ({ question: "q".repeat(200 - String(i).length) + i, answer: "a".repeat(2000) }));
     expect(cleanAnswers({ answers: max })).toHaveLength(30);
   });
+});
+
+test("hash matches application_draft.answers_hash", () => {
+  // Same vectors as tests/test_application_draft.py.
+  expect(answersHash([{ question: "Plat", answer: "60 000 € (hrubý)" }]))
+    .toBe("871cb23289bdbd27b599c6311889128060f7479cd9cc4fa3645c771a12bcd890");
+  expect(answersHash([])).toBe("4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945");
 });
 
 test("starter questions", () => {
