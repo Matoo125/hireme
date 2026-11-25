@@ -50,6 +50,13 @@ check("modifier keys ignored", selected() === before);
 press("j", {}, searchEl);
 check("typing in search ignored", selected() === before);
 
+// Search is focused on load (autofocus): Esc leaves it so the keys work.
+searchEl.focus();
+press("Escape", {}, searchEl);
+check("Esc leaves the search box", document.activeElement !== searchEl);
+press("j");
+check("keys work after Esc", selected() !== before || cards().length === 1);
+
 layoutEl.value = "table";
 layoutEl.dispatchEvent(new Event("change"));
 await wait(100);

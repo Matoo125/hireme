@@ -3008,6 +3008,10 @@ async function init() {
 }
 
 searchEl.addEventListener("input", render);
+// Search is focused on load; Esc leaves it so the triage keys (j/k/l/h…) work.
+searchEl.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") searchEl.blur();
+});
 sortEl.addEventListener("change", () => {
   tableSort = null;
   sortChosen = true;
