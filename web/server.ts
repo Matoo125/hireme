@@ -2,6 +2,7 @@
 // reading the jobs CSV produced by scrape_80000hours_jobs.py.
 
 import { writeFileAtomic } from "./lib/write-file";
+import { STARTER_QUESTIONS, cleanAnswers, readAnswers, writeAnswers, type SavedAnswer } from "./lib/answers";
 import path from "path";
 import { mkdir, rm, stat, unlink } from "fs/promises";
 import { createRemoteJWKSet, jwtVerify } from "jose";
@@ -974,6 +975,30 @@ Bun.serve({
     }
 
     // ── Preferences endpoints ───────────────────────────────────────────────
+
+    // GET/PUT /api/answers: saved answers to common application questions.
+    if (url.pathname === "/api/answers") {
+      let user: { id: number; username: string | null };
+      try {
+        user = await verifyToken(req.headers.get("authorization"));
+      } catch {
+        return Response.json({ error: "unauthorized" }, { status: 401 });
+      }
+      if (req.method === "GET") {
+        return Response.json({ answers: await readAnswers(DATA_DIR, user.id), starters: STARTER_QUESTIONS });
+      }
+      if (req.method === "PUT") {
+        let answers: SavedAnswer[];
+        try {
+          answers = cleanAnswers(await req.json().catch(() => null));
+        } catch (err) {
+          return Response.json({ error: (err as Error).message }, { status: 400 });
+        }
+        await writeAnswers(DATA_DIR, user.id, answers);
+        return Response.json({ answers });
+      }
+      return new Response("Method not allowed", { status: 405 });
+    }
 
     if (url.pathname === "/api/preferences") {
       let user: { id: number; username: string | null };
