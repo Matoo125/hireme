@@ -106,6 +106,8 @@ function updateAuthUI() {
     userInfo.hidden = false;
     userName.textContent = getUser() || "User";
     cvSection.hidden = false;
+    document.getElementById("answersSection").hidden = false;
+    loadSavedAnswers();
     pageSection.hidden = false;
     feedSection.hidden = false;
     digestSection.hidden = false;
@@ -119,6 +121,7 @@ function updateAuthUI() {
     loginBtn.hidden = false;
     userInfo.hidden = true;
     cvSection.hidden = true;
+    document.getElementById("answersSection").hidden = true;
     pageSection.hidden = true;
     feedSection.hidden = true;
     digestSection.hidden = true;
@@ -238,6 +241,130 @@ async function deleteCv() {
 // tracks or fits best. Made in the background on request; the user edits the PDF.
 
 let advicePolls = 0;
+
+// ── Saved answers ───────────────────────────────────────────────────────────
+// Answers to common application questions (GET/PUT /api/answers), edited in
+// the sidebar. A changed field saves the whole list. With none saved yet, the
+// server's starter questions are shown, unanswered.
+let savedAnswers = [];
+// Editing waits for a successful load: saving sends the whole list, so a
+// list that failed to load would overwrite what's stored.
+let savedAnswersLoaded = false;
+const answersSectionEl = document.getElementById("answersSection");
+
+function setAnswersStatus(text) {
+  const status = answersSectionEl.querySelector(".answers-status");
+  status.hidden = !text;
+  status.textContent = text;
+}
+
+async function loadSavedAnswers() {
+  savedAnswersLoaded = false;
+  answersSectionEl.querySelector(".answers-add").disabled = true;
+  try {
+    const res = await fetch("/api/answers", { headers: { Authorization: `Bearer ${await getJwt()}` } });
+    if (!res.ok) throw new Error(String(res.status));
+    const data = await res.json();
+    savedAnswers = data.answers.length ? data.answers : data.starters.map((question) => ({ question, answer: "" }));
+    savedAnswersLoaded = true;
+    answersSectionEl.querySelector(".answers-add").disabled = false;
+    setAnswersStatus("");
+  } catch {
+    savedAnswers = [];
+    setAnswersStatus("Couldn't load your saved answers. Reload the page to try again.");
+  }
+  renderSavedAnswers();
+}
+
+function clearSavedAnswers() {
+  savedAnswers = [];
+  savedAnswersLoaded = false;
+  renderSavedAnswers();
+}
+
+// One save at a time: a change made while one is in flight is sent after it,
+// with the list as it is then, so an earlier save can't land last.
+let answersSaving = null;
+let answersSaveAgain = false;
+
+function saveSavedAnswers() {
+  if (!savedAnswersLoaded) return;
+  if (answersSaving) {
+    answersSaveAgain = true;
+    return;
+  }
+  answersSaving = putSavedAnswers().finally(() => {
+    answersSaving = null;
+    if (answersSaveAgain) {
+      answersSaveAgain = false;
+      saveSavedAnswers();
+    }
+  });
+}
+
+async function putSavedAnswers() {
+  const status = answersSectionEl.querySelector(".answers-status");
+  // A question just added and not written yet isn't sent.
+  const answers = savedAnswers.filter((a) => a.question.trim());
+  try {
+    const res = await fetch("/api/answers", {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${await getJwt()}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ answers }),
+    });
+    const data = await res.json();
+    status.hidden = res.ok;
+    status.textContent = res.ok ? "" : data.error || "Couldn't save your answers.";
+  } catch {
+    status.hidden = false;
+    status.textContent = "Couldn't save your answers.";
+  }
+}
+
+function renderSavedAnswers() {
+  const list = document.getElementById("answersList");
+  list.replaceChildren(...savedAnswers.map((entry, i) => {
+    const row = el("div", "answer-entry");
+    const question = el("input", "input answer-question");
+    question.value = entry.question;
+    question.setAttribute("aria-label", "Question");
+    question.placeholder = "Question";
+    const answer = el("textarea", "input answer-text");
+    answer.value = entry.answer;
+    answer.rows = 2;
+    answer.setAttribute("aria-label", `Answer: ${entry.question || "new question"}`);
+    answer.placeholder = "Not answered yet";
+    const note = el("span", "answer-note", entry.answer ? "" : "Not answered yet");
+    // Either field's change takes both: a question typed but not yet
+    // blurred still goes with its answer.
+    const changed = () => {
+      entry.question = question.value;
+      entry.answer = answer.value;
+      note.textContent = answer.value.trim() ? "" : "Not answered yet";
+      saveSavedAnswers();
+    };
+    question.addEventListener("change", changed);
+    answer.addEventListener("change", changed);
+    const remove = el("button", "btn btn--link btn--danger answer-remove", "×");
+    remove.type = "button";
+    remove.setAttribute("aria-label", `Remove ${entry.question || "this question"}`);
+    remove.addEventListener("click", () => {
+      savedAnswers.splice(i, 1);
+      renderSavedAnswers();
+      saveSavedAnswers();
+    });
+    const head = el("div", "answer-head");
+    head.append(question, remove);
+    row.append(head, answer, note);
+    return row;
+  }));
+}
+
+answersSectionEl.querySelector(".answers-add").addEventListener("click", () => {
+  savedAnswers.push({ question: "", answer: "" });
+  renderSavedAnswers();
+  document.querySelector("#answersList .answer-entry:last-child .answer-question").focus();
+});
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
