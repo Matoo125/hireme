@@ -2753,6 +2753,80 @@ function writeFiltersToUrl() {
   if (url.href !== location.href) history.replaceState(history.state, "", url);
 }
 
+// ── Empty state ─────────────────────────────────────────────────────────────
+// Says why nothing is shown and offers a way out: an empty view explains how
+// jobs get there; otherwise each filter gets a button removing just it, with
+// how many jobs that would bring back.
+const EMPTY_VIEW_TEXT = {
+  liked: "You haven't liked any jobs yet. Like one (☆ or the l key) to keep it here.",
+  hidden: "You haven't marked any jobs as not relevant.",
+  tracked: "You aren't tracking any applications yet. Track a job (○ or the t key) to follow it here.",
+  new: "Nothing new since your last visit.",
+};
+
+function emptyButton(label, onclick) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "btn btn--small";
+  btn.textContent = label;
+  btn.addEventListener("click", onclick);
+  return btn;
+}
+
+function countShown({ term = searchEl.value.trim().toLowerCase(), tags = activeTags, sources = activeSources, europe = false } = {}) {
+  return jobs.filter((j) => {
+    if (!matchesSearch(j, term) || !matchesView(j, viewEl.value)) return false;
+    if ([...tags].some((t) => !splitTags(j).includes(t))) return false;
+    if (sources.size && !splitSources(j).some((s) => sources.has(s))) return false;
+    return europe || matchesEurope(j);
+  }).length;
+}
+
+function renderEmptyState(term) {
+  const view = viewEl.value;
+  const message = document.createElement("p");
+  const actions = document.createElement("div");
+  actions.className = "empty-actions";
+  const viewIsEmpty = view !== "all" && !jobs.some((j) => matchesView(j, view));
+  if (viewIsEmpty) {
+    message.textContent = EMPTY_VIEW_TEXT[view] || "No jobs here yet.";
+    actions.append(emptyButton("Show all jobs", () => {
+      viewEl.value = "all";
+      render();
+    }));
+  } else {
+    message.textContent = "No jobs match your filters. Remove one:";
+    const jobsLabel = (n) => `(${n} job${n === 1 ? "" : "s"})`;
+    if (term) {
+      actions.append(emptyButton(`Search “${searchEl.value.trim()}” ${jobsLabel(countShown({ term: "" }))}`, () => {
+        searchEl.value = "";
+        render();
+      }));
+    }
+    for (const tag of activeTags) {
+      const rest = new Set([...activeTags].filter((t) => t !== tag));
+      actions.append(emptyButton(`Tag ${tag} ${jobsLabel(countShown({ tags: rest }))}`, () => toggleTag(tag)));
+    }
+    for (const source of activeSources) {
+      const rest = new Set([...activeSources].filter((s) => s !== source));
+      actions.append(emptyButton(`Board ${source} ${jobsLabel(countShown({ sources: rest }))}`, () => toggleSource(source)));
+    }
+    const notEurope = countShown({ europe: true });
+    if (!includeNotEurope && europeFilterApplies() && notEurope) {
+      actions.append(emptyButton(`Show jobs not open to Europe ${jobsLabel(notEurope)}`, () => europeToggleEl.click()));
+    }
+    if (term || activeTags.size || activeSources.size) {
+      actions.append(emptyButton("Clear all filters", () => {
+        searchEl.value = "";
+        activeTags.clear();
+        activeSources.clear();
+        render();
+      }));
+    }
+  }
+  emptyEl.replaceChildren(message, actions);
+}
+
 function render() {
   writeFiltersToUrl();
   const term = searchEl.value.trim().toLowerCase();
@@ -2781,6 +2855,7 @@ function render() {
   closeLiveFields();
   jobsEl.innerHTML = "";
   emptyEl.hidden = sorted.length > 0;
+  if (!sorted.length) renderEmptyState(term);
 
   document.body.classList.toggle("layout-table", table);
   jobsEl.hidden = table;
