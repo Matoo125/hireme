@@ -2,6 +2,7 @@
 // reading the jobs CSV produced by scrape_80000hours_jobs.py.
 
 import { writeFileAtomic } from "./lib/write-file";
+import { STARTER_QUESTIONS, answersHash, cleanAnswers, readAnswers, writeAnswers, type SavedAnswer } from "./lib/answers";
 import path from "path";
 import { mkdir, rm, stat, unlink } from "fs/promises";
 import { createRemoteJWKSet, jwtVerify } from "jose";
@@ -285,16 +286,23 @@ async function draftStatus(userId: number, jobId: string) {
   const file = Bun.file(path.join(DRAFTS_DIR, String(userId), `${jobId}.json`));
   const saved = (await file.exists()) ? await file.json() : null;
   let status: "no-cv" | "generating" | "busy" | "none" | "ready" | "stale";
+  let staleAnswers = false;
   if (!(await pdf.exists())) status = "no-cv";
   else if (draftJobs.get(userId) === jobId) status = "generating";
   else if (!saved) status = draftJobs.has(userId) ? "busy" : "none";
-  // "stale": made from an earlier CV, still shown until the user asks again.
-  else status = saved.cv === cvHash(new Uint8Array(await pdf.arrayBuffer())) ? "ready" : "stale";
+  // "stale": made from an earlier CV or other saved answers, still shown until
+  // the user asks again. Drafts from before saved answers had none ([]).
+  else {
+    const sameCv = saved.cv === cvHash(new Uint8Array(await pdf.arrayBuffer()));
+    staleAnswers = (saved.answers ?? answersHash([])) !== answersHash(await readAnswers(DATA_DIR, userId));
+    status = sameCv && !staleAnswers ? "ready" : "stale";
+  }
   return {
     status,
     error: draftErrors.get(`${userId}/${jobId}`) ?? null,
     generatedAt: saved?.generatedAt ?? null,
     fromPosting: saved?.fromPosting ?? false,
+    staleAnswers,
     draft: status === "no-cv" ? null : (saved?.draft ?? null),
   };
 }
@@ -975,6 +983,30 @@ Bun.serve({
 
     // ── Preferences endpoints ───────────────────────────────────────────────
 
+    // GET/PUT /api/answers: saved answers to common application questions.
+    if (url.pathname === "/api/answers") {
+      let user: { id: number; username: string | null };
+      try {
+        user = await verifyToken(req.headers.get("authorization"));
+      } catch {
+        return Response.json({ error: "unauthorized" }, { status: 401 });
+      }
+      if (req.method === "GET") {
+        return Response.json({ answers: await readAnswers(DATA_DIR, user.id), starters: STARTER_QUESTIONS });
+      }
+      if (req.method === "PUT") {
+        let answers: SavedAnswer[];
+        try {
+          answers = cleanAnswers(await req.json().catch(() => null));
+        } catch (err) {
+          return Response.json({ error: (err as Error).message }, { status: 400 });
+        }
+        await writeAnswers(DATA_DIR, user.id, answers);
+        return Response.json({ answers });
+      }
+      return new Response("Method not allowed", { status: 405 });
+    }
+
     if (url.pathname === "/api/preferences") {
       let user: { id: number; username: string | null };
       try {
@@ -1068,6 +1100,11 @@ Bun.serve({
         if (body.status && !VALID_STATUSES.includes(body.status)) {
           return Response.json({ error: "Invalid status" }, { status: 400 });
         }
+        // The kit's checklist items the user ticked.
+        if (body.checked !== undefined && !(Array.isArray(body.checked) && body.checked.length <= 50
+            && body.checked.every((c: unknown) => typeof c === "string" && c.length <= 300))) {
+          return Response.json({ error: "checked must be a list of at most 50 items" }, { status: 400 });
+        }
         await mkdir(APPS_DIR, { recursive: true });
         const file = Bun.file(appsPath(user.id));
         const apps: Record<string, any> = (await file.exists())
@@ -1080,6 +1117,7 @@ Bun.serve({
           notes: body.notes ?? existing?.notes ?? "",
           motivationLetter:
             body.motivationLetter ?? existing?.motivationLetter ?? "",
+          checked: body.checked ?? existing?.checked ?? [],
           createdAt: existing?.createdAt ?? now,
           updatedAt: now,
         };

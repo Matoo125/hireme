@@ -10,7 +10,8 @@ show, into data/drafts/<user>/<job>.json. The user edits and sends it
 themselves; nothing here applies anywhere.
 
 Runs only when the user asks (the "Draft application" button on a tracked job).
-It does nothing when the CV and the job are the same as last time, unless --force.
+It does nothing when the CV, the job and the saved answers (data/answers/) are
+the same as last time, unless --force.
 
     python3 application_draft.py --user 42 --job 0a1b2c3d4e5f
     python3 application_draft.py --user 42 --job 0a1b2c3d4e5f --dry-run
@@ -34,7 +35,10 @@ from scrapers import postings
 
 MODEL = "claude-opus-5-5"
 # Bumped when the schema or prompt changes, so the same CV and job get a new draft.
-DRAFT_VERSION = 1
+DRAFT_VERSION = 2
+# The limits PUT /api/applications puts on `checked` (web/server.ts).
+MAX_CHECKLIST = 50
+MAX_CHECK_ITEM = 300
 JOB_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 SYSTEM = """You help one job seeker apply to one job. You get their CV and the
@@ -51,11 +55,18 @@ job's listing. Write a draft they will edit and send themselves:
    asks none, return no answers.
 3. Gaps: requirements the posting states that the CV doesn't show, one short
    line each, so they can address them or decide not to apply.
+4. A checklist: each thing the application asks the person to provide or do
+   (e.g. CV, cover letter, work sample, references, a test task, a form), one
+   short line each, in the order the posting gives them.
+5. The deadline as the posting states it, verbatim (e.g. '15 January 2027,
+   23:59 CET'), or empty if it states none.
 
 Be honest. Use only what the CV shows: never invent experience, skills, results,
 numbers or qualifications. Where a strong answer needs something the CV doesn't
 say, write a placeholder in square brackets for the person to fill in, e.g.
-"[a project where you managed a budget]". Don't include contact details or a
+"[a project where you managed a budget]". The person may also give their saved
+answers to common questions: use them where they answer a question (word for
+word where that fits), and nowhere else. Don't include contact details or a
 postal address block; the person adds those."""
 
 
@@ -71,6 +82,8 @@ def draft_schema():
         letter: str = Field(description="The cover letter, paragraphs separated by blank lines")
         answers: list[Answer] = Field(default_factory=list)
         gaps: list[str] = Field(default_factory=list)
+        checklist: list[str] = Field(default_factory=list, description="What the application asks for, one line each")
+        deadline: str = Field(default="", description="The deadline as the posting states it, or empty")
 
     return Draft
 
@@ -86,8 +99,31 @@ def find_job(user_id, job_id, jobs, data_dir):
     return None
 
 
-def make_draft(client, cv_pdf, job, posting=""):
-    """The draft as a dict: {language, letter, answers, gaps}."""
+def read_answers(data_dir, user_id):
+    """The user's saved answers (data/answers/<id>.json, written by the web
+    app's web/lib/answers.ts), [] if none."""
+    return read_json(data_dir / "answers" / f"{user_id}.json", [])
+
+
+def answers_hash(answers):
+    """sha256 of the answers as JSON.stringify writes them, so server.ts can
+    tell a draft made from other answers (status "stale")."""
+    text = json.dumps(answers, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def answers_text(answers):
+    """The answered ones as Q/A pairs for the prompt; "" if none."""
+    pairs = [f"Q: {a['question']}\nA: {a['answer']}" for a in answers if a.get("answer", "").strip()]
+    if not pairs:
+        return ""
+    return ("My saved answers to common questions (use them where they answer a question; "
+            "don't use them otherwise):\n\n" + "\n\n".join(pairs))
+
+
+def make_draft(client, cv_pdf, job, posting="", answers=()):
+    """The draft as a dict: {language, letter, answers, gaps, checklist, deadline}."""
+    saved = answers_text(answers)
     response = client.messages.parse(
         model=MODEL,
         max_tokens=16000,
@@ -100,13 +136,19 @@ def make_draft(client, cv_pdf, job, posting=""):
                            "data": base64.standard_b64encode(cv_pdf).decode("ascii")},
                 "title": "CV",
             },
+            *([{"type": "text", "text": saved}] if saved else []),
             {"type": "text", "text": f"The job I'm applying to:\n\n{job_text(job, posting)}\n\nDraft my application."},
         ]}],
         output_format=draft_schema(),
     )
     if response.stop_reason != "end_turn" or response.parsed_output is None:
         raise ValueError(f"no draft ({response.stop_reason})")
-    return response.parsed_output.model_dump()
+    draft = response.parsed_output.model_dump()
+    # Ticked items are saved as `checked`, which the server takes up to
+    # MAX_CHECKLIST items of MAX_CHECK_ITEM characters.
+    draft["checklist"] = [item if len(item) <= MAX_CHECK_ITEM else item[:MAX_CHECK_ITEM - 1] + "…"
+                          for item in draft["checklist"][:MAX_CHECKLIST]]
+    return draft
 
 
 def draft_path(data_dir, user_id, job_id):
@@ -129,10 +171,11 @@ def draft_application(user_id, job_id, jobs, data_dir, dry_run=False, force=Fals
     cv_pdf = cv_path.read_bytes()
     cv_hash = hashlib.sha256(cv_pdf).hexdigest()
     posting = postings.text_of(data_dir / "postings", job_id)
+    answers = read_answers(data_dir, user_id)
     out = draft_path(data_dir, user_id, job_id)
     saved = read_json(out, {})
     if (not force and saved.get("cv") == cv_hash and saved.get("model") == MODEL
-            and saved.get("version") == DRAFT_VERSION):
+            and saved.get("version") == DRAFT_VERSION and saved.get("answers") == answers_hash(answers)):
         print(f"User {user_id}: draft for {job_id} already up to date")
         return False
     if dry_run:
@@ -143,7 +186,7 @@ def draft_application(user_id, job_id, jobs, data_dir, dry_run=False, force=Fals
     if client is None:
         import anthropic
         client = anthropic.Anthropic()
-    draft = make_draft(client, cv_pdf, job, posting)
+    draft = make_draft(client, cv_pdf, job, posting, answers)
     # The CV may be replaced or deleted while the model runs: don't save a
     # draft made from a CV the user no longer has.
     if not cv_path.exists() or hashlib.sha256(cv_path.read_bytes()).hexdigest() != cv_hash:
@@ -153,6 +196,7 @@ def draft_application(user_id, job_id, jobs, data_dir, dry_run=False, force=Fals
         "cv": cv_hash,
         "model": MODEL,
         "version": DRAFT_VERSION,
+        "answers": answers_hash(answers),
         "job": job_id,
         "fromPosting": bool(posting),
         "generatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

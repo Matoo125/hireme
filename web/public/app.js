@@ -106,6 +106,8 @@ function updateAuthUI() {
     userInfo.hidden = false;
     userName.textContent = getUser() || "User";
     cvSection.hidden = false;
+    document.getElementById("answersSection").hidden = false;
+    loadSavedAnswers();
     pageSection.hidden = false;
     feedSection.hidden = false;
     digestSection.hidden = false;
@@ -119,6 +121,8 @@ function updateAuthUI() {
     loginBtn.hidden = false;
     userInfo.hidden = true;
     cvSection.hidden = true;
+    document.getElementById("answersSection").hidden = true;
+    clearSavedAnswers();
     pageSection.hidden = true;
     feedSection.hidden = true;
     digestSection.hidden = true;
@@ -238,6 +242,130 @@ async function deleteCv() {
 // tracks or fits best. Made in the background on request; the user edits the PDF.
 
 let advicePolls = 0;
+
+// ── Saved answers ───────────────────────────────────────────────────────────
+// Answers to common application questions (GET/PUT /api/answers), edited in
+// the sidebar. A changed field saves the whole list. With none saved yet, the
+// server's starter questions are shown, unanswered.
+let savedAnswers = [];
+// Editing waits for a successful load: saving sends the whole list, so a
+// list that failed to load would overwrite what's stored.
+let savedAnswersLoaded = false;
+const answersSectionEl = document.getElementById("answersSection");
+
+function setAnswersStatus(text) {
+  const status = answersSectionEl.querySelector(".answers-status");
+  status.hidden = !text;
+  status.textContent = text;
+}
+
+async function loadSavedAnswers() {
+  savedAnswersLoaded = false;
+  answersSectionEl.querySelector(".answers-add").disabled = true;
+  try {
+    const res = await fetch("/api/answers", { headers: { Authorization: `Bearer ${await getJwt()}` } });
+    if (!res.ok) throw new Error(String(res.status));
+    const data = await res.json();
+    savedAnswers = data.answers.length ? data.answers : data.starters.map((question) => ({ question, answer: "" }));
+    savedAnswersLoaded = true;
+    answersSectionEl.querySelector(".answers-add").disabled = false;
+    setAnswersStatus("");
+  } catch {
+    savedAnswers = [];
+    setAnswersStatus("Couldn't load your saved answers. Reload the page to try again.");
+  }
+  renderSavedAnswers();
+}
+
+function clearSavedAnswers() {
+  savedAnswers = [];
+  savedAnswersLoaded = false;
+  renderSavedAnswers();
+}
+
+// One save at a time: a change made while one is in flight is sent after it,
+// with the list as it is then, so an earlier save can't land last.
+let answersSaving = null;
+let answersSaveAgain = false;
+
+function saveSavedAnswers() {
+  if (!savedAnswersLoaded) return;
+  if (answersSaving) {
+    answersSaveAgain = true;
+    return;
+  }
+  answersSaving = putSavedAnswers().finally(() => {
+    answersSaving = null;
+    if (answersSaveAgain) {
+      answersSaveAgain = false;
+      saveSavedAnswers();
+    }
+  });
+}
+
+async function putSavedAnswers() {
+  const status = answersSectionEl.querySelector(".answers-status");
+  // A question just added and not written yet isn't sent.
+  const answers = savedAnswers.filter((a) => a.question.trim());
+  try {
+    const res = await fetch("/api/answers", {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${await getJwt()}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ answers }),
+    });
+    const data = await res.json();
+    status.hidden = res.ok;
+    status.textContent = res.ok ? "" : data.error || "Couldn't save your answers.";
+  } catch {
+    status.hidden = false;
+    status.textContent = "Couldn't save your answers.";
+  }
+}
+
+function renderSavedAnswers() {
+  const list = document.getElementById("answersList");
+  list.replaceChildren(...savedAnswers.map((entry, i) => {
+    const row = el("div", "answer-entry");
+    const question = el("input", "input answer-question");
+    question.value = entry.question;
+    question.setAttribute("aria-label", "Question");
+    question.placeholder = "Question";
+    const answer = el("textarea", "input answer-text");
+    answer.value = entry.answer;
+    answer.rows = 2;
+    answer.setAttribute("aria-label", `Answer: ${entry.question || "new question"}`);
+    answer.placeholder = "Not answered yet";
+    const note = el("span", "answer-note", entry.answer ? "" : "Not answered yet");
+    // Either field's change takes both: a question typed but not yet
+    // blurred still goes with its answer.
+    const changed = () => {
+      entry.question = question.value;
+      entry.answer = answer.value;
+      note.textContent = answer.value.trim() ? "" : "Not answered yet";
+      saveSavedAnswers();
+    };
+    question.addEventListener("change", changed);
+    answer.addEventListener("change", changed);
+    const remove = el("button", "btn btn--link btn--danger answer-remove", "×");
+    remove.type = "button";
+    remove.setAttribute("aria-label", `Remove ${entry.question || "this question"}`);
+    remove.addEventListener("click", () => {
+      savedAnswers.splice(i, 1);
+      renderSavedAnswers();
+      saveSavedAnswers();
+    });
+    const head = el("div", "answer-head");
+    head.append(question, remove);
+    row.append(head, answer, note);
+    return row;
+  }));
+}
+
+answersSectionEl.querySelector(".answers-add").addEventListener("click", () => {
+  savedAnswers.push({ question: "", answer: "" });
+  renderSavedAnswers();
+  document.querySelector("#answersList .answer-entry:last-child .answer-question").focus();
+});
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -1113,7 +1241,10 @@ function draftPanel(jobId) {
     button.disabled = busy || data.status === "no-cv";
     button.textContent = data.draft ? "Draft again" : "Draft application";
     info.className = data.error ? "cv-status cv-status--error" : "cv-status";
-    info.textContent = data.error || DRAFT_STATUS_TEXT[data.status] || "";
+    info.textContent = data.error
+      || (data.status === "stale" && data.staleAnswers
+        ? "Your saved answers changed since this draft. Draft again to use them."
+        : DRAFT_STATUS_TEXT[data.status]) || "";
     body.replaceChildren();
     if (data.draft && !busy) body.append(...draftContent(jobId, data));
     if (busy && polls++ < 40) setTimeout(() => request("GET"), 3000);
@@ -1144,9 +1275,65 @@ function draftPanel(jobId) {
   return box;
 }
 
+// A button copying getText() to the clipboard. Where the clipboard can't be
+// used (no secure context, permission denied), it selects `select` instead
+// and says to press Ctrl+C.
+function copyButton(getText, label = "Copy", select = null) {
+  const btn = el("button", "btn btn--link btn--small copy-btn", label);
+  btn.type = "button";
+  let timer = 0;
+  const say = (text, ms) => {
+    btn.textContent = text;
+    clearTimeout(timer);
+    timer = setTimeout(() => (btn.textContent = label), ms);
+  };
+  btn.addEventListener("click", async () => {
+    try {
+      if (!navigator.clipboard) throw new Error("no clipboard");
+      await navigator.clipboard.writeText(getText());
+      say("Copied", 2000);
+    } catch {
+      if (select) {
+        const range = document.createRange();
+        range.selectNodeContents(select);
+        const selection = getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+      say("Press Ctrl+C to copy", 3000);
+    }
+  });
+  return btn;
+}
+
+// The checklist, ticks saved on the application (`checked`, matched by text:
+// ticks for items a new draft no longer lists are dropped on the next tick).
+function kitChecklist(jobId, items) {
+  const list = el("ul", "kit-checklist");
+  for (const item of items) {
+    const label = el("label", "kit-check");
+    const box = el("input");
+    box.type = "checkbox";
+    box.checked = (applications.get(jobId)?.checked || []).includes(item);
+    box.addEventListener("change", () => {
+      const ticked = new Set((applications.get(jobId)?.checked || []).filter((c) => items.includes(c)));
+      if (box.checked) ticked.add(item);
+      else ticked.delete(item);
+      updateApplication(jobId, "checked", items.filter((c) => ticked.has(c)));
+    });
+    label.append(box, ` ${item}`);
+    const li = el("li");
+    li.append(label);
+    list.append(li);
+  }
+  return list;
+}
+
 function draftContent(jobId, data) {
   const { draft } = data;
   const out = [];
+  if (draft.deadline) out.push(el("p", "kit-deadline", `Deadline: ${draft.deadline}`));
+  if (draft.checklist?.length) out.push(el("h4", "", "What to send"), kitChecklist(jobId, draft.checklist));
 
   const letterHead = el("div", "draft-section-head");
   letterHead.append(el("h4", "", "Drafted letter"));
@@ -1159,16 +1346,30 @@ function draftContent(jobId, data) {
     updateApplication(jobId, "motivationLetter", draft.letter);
     render();
   });
-  letterHead.append(use);
-  out.push(letterHead, el("div", "draft-letter", draft.letter));
+  const letter = el("div", "draft-letter", draft.letter);
+  letterHead.append(use, copyButton(() => draft.letter, "Copy", letter));
+  out.push(letterHead, letter);
 
   if (draft.answers?.length) {
     out.push(el("h4", "", "Questions the posting asks"));
     for (const a of draft.answers) {
       const item = el("div", "draft-answer");
-      item.append(el("p", "draft-question", a.question), el("p", "draft-text", a.answer));
+      const text = el("p", "draft-text", a.answer);
+      item.append(el("p", "draft-question", a.question), text, copyButton(() => a.answer, "Copy", text));
       out.push(item);
     }
+  }
+  const answered = savedAnswers.filter((a) => a.answer.trim());
+  if (answered.length) {
+    const saved = el("div", "kit-saved");
+    saved.append(el("h4", "", "Your saved answers"));
+    for (const a of answered) {
+      const item = el("div", "kit-item");
+      const text = el("p", "draft-text", a.answer);
+      item.append(el("p", "draft-question", a.question), text, copyButton(() => a.answer, "Copy", text));
+      saved.append(item);
+    }
+    out.push(saved);
   }
   if (draft.gaps?.length) {
     out.push(el("h4", "", "What your CV doesn't show"));

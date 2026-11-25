@@ -1226,3 +1226,19 @@ article.job.is-selected {
 @media (max-width: 640px) {
   .tracked-board { width: auto; margin-inline: 0; grid-template-columns: 1fr; overflow-x: visible; }
 }
+
+/* Saved answers (sidebar) */
+.answers-title { margin: 0 0 var(--space-1); font-size: var(--text-md); }
+.answer-entry { display: flex; flex-direction: column; gap: var(--space-1); margin: var(--space-3) 0; }
+.answer-head { display: flex; gap: var(--space-2); align-items: center; }
+.answer-question { flex: 1; font-weight: var(--weight-medium); }
+.answer-text { width: 100%; resize: vertical; }
+.answer-note { color: var(--muted); font-size: var(--text-xs); }
+.answer-note:empty { display: none; }
+
+/* The application kit in a tracked job's draft panel */
+.kit-deadline { margin: 0 0 var(--space-2); font-weight: var(--weight-bold); color: var(--warning-fg); }
+.kit-checklist { list-style: none; margin: 0 0 var(--space-3); padding: 0; }
+.kit-check { display: inline-flex; gap: var(--space-2); align-items: baseline; cursor: pointer; }
+.kit-saved { margin-top: var(--space-3); }
+.copy-btn { padding: 0 var(--space-1); }

@@ -21,7 +21,8 @@ DRAFT = {
 
 
 class FakeClient:
-    def __init__(self, refuse=False, on_call=None):
+    def __init__(self, refuse=False, on_call=None, draft=DRAFT):
+        self.draft = draft
         self.calls = []
         self.refuse = refuse
         self.on_call = on_call
@@ -33,7 +34,7 @@ class FakeClient:
             self.on_call()
         if self.refuse:
             return SimpleNamespace(stop_reason="refusal", parsed_output=None)
-        return SimpleNamespace(stop_reason="end_turn", parsed_output=kwargs["output_format"](**DRAFT))
+        return SimpleNamespace(stop_reason="end_turn", parsed_output=kwargs["output_format"](**self.draft))
 
 
 class DraftApplication(unittest.TestCase):
@@ -60,12 +61,67 @@ class DraftApplication(unittest.TestCase):
         written, _ = self.run_draft(client=client)
         self.assertTrue(written)
         saved = self.saved()
-        self.assertEqual(saved["draft"], DRAFT)
+        # Older-style output (no checklist or deadline) gets them empty.
+        self.assertEqual(saved["draft"], {**DRAFT, "checklist": [], "deadline": ""})
         self.assertEqual(saved["job"], "j1")
         self.assertFalse(saved["fromPosting"])
         content = client.calls[0]["messages"][0]["content"]
         self.assertEqual(content[0]["type"], "document")
         self.assertIn("Title: Analyst", content[1]["text"])
+
+    def write_answers(self, answers):
+        (self.data / "answers").mkdir(exist_ok=True)
+        (self.data / "answers" / "7.json").write_text(json.dumps(answers))
+
+    def request_text(self, client):
+        return "\n".join(part.get("text", "") for part in client.calls[0]["messages"][0]["content"])
+
+    def test_saved_answers_go_to_the_model(self):
+        self.write_answers([{"question": "Salary expectations", "answer": "60k EUR"},
+                            {"question": "Notice period", "answer": ""}])
+        client = FakeClient()
+        self.run_draft(client=client)
+        text = self.request_text(client)
+        self.assertIn("Q: Salary expectations\nA: 60k EUR", text)
+        self.assertNotIn("Notice period", text)
+
+    def test_no_saved_answers_no_block(self):
+        client = FakeClient()
+        self.run_draft(client=client)
+        self.assertNotIn("saved answers", self.request_text(client).lower())
+
+    def test_changed_answers_make_a_new_draft(self):
+        self.write_answers([{"question": "Salary expectations", "answer": "60k EUR"}])
+        self.run_draft(client=FakeClient())
+        self.write_answers([{"question": "Salary expectations", "answer": "65k EUR"}])
+        written, _ = self.run_draft(client=FakeClient())
+        self.assertTrue(written)
+
+    def test_answers_hash_matches_the_servers(self):
+        # server.ts hashes JSON.stringify(answers): no spaces, non-ASCII kept.
+        answers = [{"question": "Plat", "answer": "60 000 € (hrubý)"}]
+        self.write_answers(answers)
+        self.run_draft(client=FakeClient())
+        expected = __import__("hashlib").sha256(
+            '[{"question":"Plat","answer":"60 000 € (hrubý)"}]'.encode("utf-8")).hexdigest()
+        self.assertEqual(self.saved()["answers"], expected)
+
+    def test_draft_keeps_checklist_and_deadline(self):
+        draft = {**DRAFT, "checklist": ["CV", "Work sample"], "deadline": "15 January 2027"}
+        self.run_draft(client=FakeClient(draft=draft))
+        saved = self.saved()
+        self.assertEqual(saved["draft"]["checklist"], ["CV", "Work sample"])
+        self.assertEqual(saved["draft"]["deadline"], "15 January 2027")
+        self.assertEqual(saved["version"], 2)
+
+    def test_checklist_fits_what_the_server_accepts_as_ticks(self):
+        # PUT /api/applications refuses `checked` past 50 items of 300 characters.
+        draft = {**DRAFT, "checklist": ["x" * 400] + [f"item {i}" for i in range(60)]}
+        self.run_draft(client=FakeClient(draft=draft))
+        checklist = self.saved()["draft"]["checklist"]
+        self.assertEqual(len(checklist), 50)
+        self.assertTrue(all(len(item) <= 300 for item in checklist))
+        self.assertTrue(checklist[0].endswith("…"))
 
     def test_skips_when_cv_and_job_are_unchanged_unless_forced(self):
         self.run_draft(client=FakeClient())
