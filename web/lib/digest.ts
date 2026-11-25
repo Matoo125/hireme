@@ -9,6 +9,7 @@ import { timingSafeEqual } from "crypto";
 import { readdir, unlink } from "fs/promises";
 import path from "path";
 import { feedItems, httpLink, newToken, type FeedItem, type FitScore } from "./feed";
+import { writeFileAtomic } from "./write-file";
 
 export interface DigestSettings {
   email: string;
@@ -52,7 +53,7 @@ export async function readDigest(dir: string, userId: number): Promise<DigestSet
 }
 
 export async function writeDigest(dir: string, userId: number, digest: DigestSettings): Promise<void> {
-  await Bun.write(digestPath(dir, userId), JSON.stringify(digest, null, 1));
+  await writeFileAtomic(digestPath(dir, userId), JSON.stringify(digest, null, 1));
 }
 
 export async function removeDigest(dir: string, userId: number): Promise<void> {

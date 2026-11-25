@@ -10,6 +10,7 @@ import { readdir, unlink } from "fs/promises";
 import path from "path";
 import { emailProblem, type Email } from "./digest";
 import { newToken } from "./feed";
+import { writeFileAtomic } from "./write-file";
 
 export interface ContactSettings {
   email: string;
@@ -35,7 +36,7 @@ export async function readContact(dir: string, userId: number): Promise<ContactS
 }
 
 export async function writeContact(dir: string, userId: number, contact: ContactSettings): Promise<void> {
-  await Bun.write(contactPath(dir, userId), JSON.stringify(contact, null, 1));
+  await writeFileAtomic(contactPath(dir, userId), JSON.stringify(contact, null, 1));
 }
 
 export async function removeContact(dir: string, userId: number): Promise<void> {
