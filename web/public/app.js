@@ -2716,7 +2716,45 @@ function downloadCsv() {
   URL.revokeObjectURL(url);
 }
 
+// ── Filters in the URL ──────────────────────────────────────────────────────
+// ?q=&tag=&source=&view=&sort= so a search can be bookmarked or shared. Only
+// what differs from the defaults is written, and the sort only once chosen
+// (an automatic "best fit" sort would mean nothing to someone else).
+const DEFAULT_VIEW = "all";
+const DEFAULT_SORT = "posted_desc";
+
+function hasOption(select, value) {
+  return [...select.options].some((o) => o.value === value);
+}
+
+function readFiltersFromUrl() {
+  const params = new URLSearchParams(location.search);
+  if (params.has("q")) searchEl.value = params.get("q");
+  for (const tag of params.getAll("tag")) activeTags.add(tag);
+  for (const source of params.getAll("source")) activeSources.add(source);
+  const view = params.get("view");
+  if (view && hasOption(viewEl, view)) viewEl.value = view;
+  const sort = params.get("sort");
+  if (sort && hasOption(sortEl, sort)) {
+    sortEl.value = sort;
+    sortChosen = true;
+  }
+}
+
+function writeFiltersToUrl() {
+  const url = new URL(location.href);
+  for (const key of ["q", "tag", "source", "view", "sort"]) url.searchParams.delete(key);
+  const q = searchEl.value.trim();
+  if (q) url.searchParams.set("q", q);
+  for (const tag of activeTags) url.searchParams.append("tag", tag);
+  for (const source of activeSources) url.searchParams.append("source", source);
+  if (viewEl.value !== DEFAULT_VIEW) url.searchParams.set("view", viewEl.value);
+  if (sortChosen && sortEl.value !== DEFAULT_SORT) url.searchParams.set("sort", sortEl.value);
+  if (url.href !== location.href) history.replaceState(history.state, "", url);
+}
+
 function render() {
+  writeFiltersToUrl();
   const term = searchEl.value.trim().toLowerCase();
   const table = layoutEl.value === "table";
   const unfiltered = jobs.filter(
@@ -2790,6 +2828,7 @@ async function init() {
   countEl.textContent = "Loading…";
   const res = await fetch("/api/jobs");
   jobs = await res.json();
+  readFiltersFromUrl();
   render();
   loadPreferences();
   loadApplications();
