@@ -123,6 +123,15 @@ def main():
         # for jobs not read before.
         print(f"  postings or europe not read: {exc}", file=sys.stderr)
         problems.append(f"postings/europe: {exc!r}")
+    try:
+        checked = postings.recheck(merged, data_dir / "postings", today)
+        for job in merged:
+            job["closed"] = postings.closed_since(data_dir / "postings", job["id"])
+        print(f"Postings rechecked: {checked}; closed: {sum(1 for j in merged if j['closed'])}")
+    except Exception as exc:
+        # jobs.csv is still written, with closed left empty.
+        print(f"  postings not rechecked: {exc}", file=sys.stderr)
+        problems.append(f"recheck: {exc!r}")
     save_scraped(args.scraped, merged)
 
     try:

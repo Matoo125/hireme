@@ -38,7 +38,7 @@ id, source, title, link, publication_date, close_date, first_seen,
 organization_name, organization_url, organization_description,
 description, salary_range, tags, salary_min, salary_max, salary_currency,
 salary_period, job_type, experience, education, location, cause_area,
-skills, other_tags, europe, europe_reason, corrected
+skills, other_tags, europe, europe_reason, closed, corrected
 ```
 
 - `id`: 12-char MD5 prefix of a stable identity key (normalized link, or normalized
@@ -59,6 +59,11 @@ skills, other_tags, europe, europe_reason, corrected
   column. Exposed in `/api/v1` as `europe: {verdict, reason}` with a `europe` filter. The
   frontend leaves `no` jobs out of All jobs / New unless "Show N not open to Europe" is on
   (remembered per browser); liked, hidden and tracked views always show them.
+- `closed`: the date the job's posting page was first found gone (HTTP 404/410), once it has
+  been gone on two checks in a row (§4); empty while open. The frontend leaves closed jobs out of
+  All jobs / New unless "Show N closed" is on (remembered per browser) and labels them where
+  shown; liked, hidden and tracked views always show them. The RSS feed, the email digest and
+  the closing-date reminders skip them. Correctable in `overrides.toml` like any column.
 - About 525 rows / 4 boards (80,000 Hours, Probably Good, EA Opportunities Board, Animal
   Advocacy Careers).
 
@@ -153,6 +158,14 @@ applies to new readings only) and sets `europe`,
 `europe_reason`. Without `ANTHROPIC_API_KEY` nothing new is read. Fetch or read failures are
 problems (non-zero exit) but `jobs.csv` is still written. `fit_scores.py` reads the same full
 postings.
+
+**Closed postings**: each fetched posting is checked again every 3 days (`postings.recheck`,
+status only: the text is kept, so the Europe check isn't re-run). A 404/410 on two checks in a
+row, the first fetch included, sets the job's `closed` to the first of them; a page that loads
+again clears it, and errors, timeouts and refusals count for neither. A sample of 120 live
+postings (2026-11-25) found 2 gone pages, both real closures; text such as "applications
+closed" was too noisy to match on (it also hit "open until the position is filled" and other
+jobs on shared pages), so it isn't used.
 
 Adding a board = new `scrapers/<name>.py` with `fetch_jobs()` returning `FIELDNAMES`-shaped
 dicts, registered in `SCRAPERS` in `scrape_jobs.py`. Three existing implementation patterns to

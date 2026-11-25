@@ -933,6 +933,19 @@ function matchesEurope(job) {
   return includeNotEurope || job.europe !== "no" || !europeFilterApplies();
 }
 
+// Jobs whose posting is gone (`closed`, scrapers/postings.py) are left out the
+// same way, where the Europe filter applies, unless asked for.
+const CLOSED_KEY = "jobBoard.includeClosed";
+const closedToggleEl = document.getElementById("closedToggle");
+let includeClosed = false;
+try {
+  includeClosed = localStorage.getItem(CLOSED_KEY) === "1";
+} catch {}
+
+function matchesClosed(job) {
+  return includeClosed || !job.closed || !europeFilterApplies();
+}
+
 // ── Application tracker state ───────────────────────────────────────────────
 
 const APPS_KEY = "jobBoard.applications";
@@ -1914,6 +1927,12 @@ function jobCard(job) {
     europeEl.textContent = `Not open to Europe${job.europe_reason ? `: ${job.europe_reason}` : ""}`;
     titleWrap.appendChild(europeEl);
   }
+  if (job.closed) {
+    const closedEl = document.createElement("p");
+    closedEl.className = "job-closed";
+    closedEl.textContent = `Posting closed: its page is gone (since ${job.closed})`;
+    titleWrap.appendChild(closedEl);
+  }
 
   const meta = document.createElement("div");
   meta.className = "job-meta";
@@ -2867,12 +2886,12 @@ function emptyButton(label, onclick) {
   return btn;
 }
 
-function countShown({ term = searchEl.value.trim().toLowerCase(), tags = activeTags, sources = activeSources, europe = false } = {}) {
+function countShown({ term = searchEl.value.trim().toLowerCase(), tags = activeTags, sources = activeSources, europe = false, closed = false } = {}) {
   return jobs.filter((j) => {
     if (!matchesSearch(j, term) || !matchesView(j, viewEl.value)) return false;
     if ([...tags].some((t) => !splitTags(j).includes(t))) return false;
     if (sources.size && !splitSources(j).some((s) => sources.has(s))) return false;
-    return europe || matchesEurope(j);
+    return (europe || matchesEurope(j)) && (closed || matchesClosed(j));
   }).length;
 }
 
@@ -2909,6 +2928,10 @@ function renderEmptyState(term) {
     if (!includeNotEurope && europeFilterApplies() && notEurope) {
       actions.append(emptyButton(`Show jobs not open to Europe ${jobsLabel(notEurope)}`, () => europeToggleEl.click()));
     }
+    const closed = countShown({ closed: true });
+    if (!includeClosed && europeFilterApplies() && closed) {
+      actions.append(emptyButton(`Show closed jobs ${jobsLabel(closed)}`, () => closedToggleEl.click()));
+    }
     if (term || activeTags.size || activeSources.size) {
       actions.append(emptyButton("Clear all filters", () => {
         searchEl.value = "";
@@ -2932,8 +2955,12 @@ function render() {
       matchesActiveSources(j) &&
       matchesView(j, viewEl.value)
   );
-  const base = unfiltered.filter(matchesEurope);
+  const base = unfiltered.filter((j) => matchesEurope(j) && matchesClosed(j));
   const notEurope = unfiltered.filter((j) => j.europe === "no").length;
+  const closedCount = unfiltered.filter((j) => j.closed && matchesEurope(j)).length;
+  closedToggleEl.hidden = !closedCount || !europeFilterApplies();
+  closedToggleEl.setAttribute("aria-pressed", String(includeClosed));
+  closedToggleEl.textContent = `${includeClosed ? "Hide" : "Show"} ${closedCount} closed`;
   europeToggleEl.hidden = !notEurope || !europeFilterApplies();
   europeToggleEl.setAttribute("aria-pressed", String(includeNotEurope));
   europeToggleEl.textContent = `${includeNotEurope ? "Hide" : "Show"} ${notEurope} not open to Europe`;
@@ -3014,6 +3041,13 @@ sortEl.addEventListener("change", () => {
   render();
 });
 viewEl.addEventListener("change", render);
+closedToggleEl.addEventListener("click", () => {
+  includeClosed = !includeClosed;
+  try {
+    localStorage.setItem(CLOSED_KEY, includeClosed ? "1" : "0");
+  } catch {}
+  render();
+});
 europeToggleEl.addEventListener("click", () => {
   includeNotEurope = !includeNotEurope;
   try {

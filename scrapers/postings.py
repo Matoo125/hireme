@@ -5,7 +5,8 @@ each job's link has the rest: who can apply from where, what it pays, the
 whole description. Each scrape fetches the posting of every job it hasn't
 fetched yet into data/postings/<id>.json:
 
-    {"link": ..., "fetched_at": "2026-10-26", "status": 200, "text": "..."}
+    {"link": ..., "fetched_at": "2026-10-26", "status": 200, "text": "...",
+     "checked_at": "2026-11-01", "checked_status": 404, "gone": 1, "gone_since": "2026-11-01"}
 
 `text` is the page's readable text, or the description in its schema.org
 JobPosting data when that's longer (Ashby pages, for one, render the
@@ -15,6 +16,12 @@ is kept with whatever text it gave and fetched again after RETRY_DAYS.
 
 Only public addresses are fetched, redirects included: the links come from
 third-party boards, and this runs on the web app's server.
+
+Each posting is also checked again every RECHECK_DAYS (status only, the
+text is kept): a page gone (404/410) on CLOSED_AFTER checks in a row, the
+first fetch included, closes the job from the first of them (closed_since).
+Errors, timeouts and refusals are no evidence either way; a page that
+loads again reopens it.
 
     python3 -m scrapers.postings            # fetch what's missing for jobs.csv
 """
@@ -44,6 +51,9 @@ MAX_REDIRECTS = 5
 # JavaScript shell): fetched again after RETRY_DAYS.
 MIN_TEXT = 500
 RETRY_DAYS = 7
+RECHECK_DAYS = 3
+GONE_STATUSES = {404, 410}
+CLOSED_AFTER = 2
 
 GOOGLE_DOC_RE = re.compile(r"^https://docs\.google\.com/document/d/([\w-]+)")
 # Elements whose text isn't the posting.
@@ -216,6 +226,40 @@ def fetch_posting(link, session, today):
     return record
 
 
+def _track(record, previous, today):
+    """Carry the gone streak over from the previous record of the same link
+    and count this check's status into it."""
+    same = previous is not None and previous.get("link") == record["link"]
+    gone = previous.get("gone", 0) if same else 0
+    since = previous.get("gone_since", "") if same else ""
+    status = record.get("status")
+    if status in GONE_STATUSES:
+        gone, since = gone + 1, since or today
+    elif isinstance(status, int) and status < 400:
+        gone, since = 0, ""
+    record["gone"] = gone
+    record["checked_at"] = today
+    if since:
+        record["gone_since"] = since
+    else:
+        record.pop("gone_since", None)
+    return record
+
+
+def _save(postings_dir, job_id, record):
+    path = Path(postings_dir) / f"{job_id}.json"
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def closed_since(postings_dir, job_id):
+    """The date the job's posting was first found gone, once it has been gone
+    CLOSED_AFTER checks in a row; "" while it's open (or unknown)."""
+    record = load(postings_dir, job_id) or {}
+    return record.get("gone_since", "") if record.get("gone", 0) >= CLOSED_AFTER else ""
+
+
 def load(postings_dir, job_id):
     try:
         return json.loads((Path(postings_dir) / f"{job_id}.json").read_text(encoding="utf-8"))
@@ -255,12 +299,43 @@ def fetch_missing(jobs, postings_dir, today, workers=8, session=None):
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         for job, record in pool.map(run, todo):
-            path = postings_dir / f"{job['id']}.json"
-            tmp = path.with_name(f".{path.name}.tmp")
-            tmp.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
-            tmp.replace(path)
+            _save(postings_dir, job["id"], _track(record, load(postings_dir, job["id"]), today))
             read += len(record["text"]) >= MIN_TEXT
     return len(todo), read
+
+
+def _recheck_due(record, link, today):
+    if record is None or record.get("link") != link:
+        return False
+    last = record.get("checked_at") or record.get("fetched_at", "2000-01-01")
+    return date.fromisoformat(today) - date.fromisoformat(last) >= timedelta(days=RECHECK_DAYS)
+
+
+def recheck(jobs, postings_dir, today, workers=8, session=None):
+    """Check the fetched postings due again (every RECHECK_DAYS) for whether
+    their page is gone. Only the status is taken: the text is kept, so the
+    Europe check isn't re-run. Returns how many were checked."""
+    postings_dir = Path(postings_dir)
+    due = [(job, record) for job in jobs if job.get("link")
+           for record in [load(postings_dir, job["id"])] if _recheck_due(record, job["link"], today)]
+    if not due:
+        return 0
+    session = session or requests.Session()
+
+    def run(item):
+        job, record = item
+        try:
+            status, _, _ = get(fetch_url(job["link"]), session)
+        except (FetchError, requests.RequestException) as exc:
+            status = f"{type(exc).__name__}: {exc}"[:200]
+        return job, record, status
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for job, record, status in pool.map(run, due):
+            # `status` stays the fetch's (the text's); the check's goes beside it.
+            checked = _track({**record, "status": status}, record, today)
+            _save(postings_dir, job["id"], {**checked, "status": record.get("status"), "checked_status": status})
+    return len(due)
 
 
 def main():

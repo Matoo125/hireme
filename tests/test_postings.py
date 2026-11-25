@@ -134,5 +134,75 @@ class FetchMissing(unittest.TestCase):
         self.assertEqual(self.session.urls.count("https://jobs.example/a"), 1)
 
 
+class Recheck(unittest.TestCase):
+    """Fetched postings are checked again every RECHECK_DAYS; a page gone
+    (404/410) on two checks in a row closes the job, from the first."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name) / "postings"
+        self.jobs = [{"id": "a", "link": "https://jobs.example/a"}]
+        self.pages = {"https://jobs.example/a": FakeResponse(200, f"<p>{LONG}</p>")}
+        self.session = FakeSession(self.pages)
+        self.dns = fake_dns({"jobs.example": PUBLIC})
+        self.dns.start()
+        postings.fetch_missing(self.jobs, self.dir, "2026-11-01", session=self.session)
+
+    def tearDown(self):
+        self.dns.stop()
+        self.tmp.cleanup()
+
+    def check(self, today, response=None):
+        if response is not None:
+            self.pages["https://jobs.example/a"] = response
+        return postings.recheck(self.jobs, self.dir, today, session=self.session)
+
+    def test_not_before_recheck_days(self):
+        self.assertEqual(self.check("2026-11-02"), 0)
+        self.assertEqual(self.session.urls.count("https://jobs.example/a"), 1)
+        self.assertEqual(self.check("2026-11-04"), 1)
+
+    def test_closed_after_two_gone_checks_from_the_first(self):
+        self.check("2026-11-04", FakeResponse(404))
+        self.assertEqual(postings.closed_since(self.dir, "a"), "")  # once could be a hiccup
+        self.check("2026-11-07", FakeResponse(410))
+        self.assertEqual(postings.closed_since(self.dir, "a"), "2026-11-04")
+
+    def test_text_kept_while_rechecking(self):
+        self.check("2026-11-04", FakeResponse(404))
+        self.assertEqual(postings.text_of(self.dir, "a"), LONG.strip())
+
+    def test_back_again_reopens(self):
+        self.check("2026-11-04", FakeResponse(404))
+        self.check("2026-11-07", FakeResponse(404))
+        self.check("2026-11-10", FakeResponse(200, f"<p>{LONG}</p>"))
+        self.assertEqual(postings.closed_since(self.dir, "a"), "")
+
+    def test_errors_are_no_evidence(self):
+        self.check("2026-11-04", FakeResponse(404))
+        self.check("2026-11-07", FakeResponse(503))
+        self.check("2026-11-10", FakeResponse(403))
+        self.assertEqual(postings.closed_since(self.dir, "a"), "")
+        self.check("2026-11-13", FakeResponse(404))
+        self.assertEqual(postings.closed_since(self.dir, "a"), "2026-11-04")
+
+    def test_gone_on_first_fetch_counts(self):
+        jobs = [{"id": "g", "link": "https://jobs.example/g"}]
+        self.pages["https://jobs.example/g"] = FakeResponse(404)
+        postings.fetch_missing(jobs, self.dir, "2026-11-01", session=self.session)
+        self.assertEqual(postings.closed_since(self.dir, "g"), "")
+        postings.recheck(jobs, self.dir, "2026-11-01", session=self.session)  # too soon
+        postings.recheck(jobs, self.dir, "2026-11-04", session=self.session)
+        self.assertEqual(postings.closed_since(self.dir, "g"), "2026-11-01")
+
+    def test_new_link_starts_over(self):
+        self.check("2026-11-04", FakeResponse(404))
+        self.check("2026-11-07", FakeResponse(404))
+        moved = [{"id": "a", "link": "https://jobs.example/a2"}]
+        self.pages["https://jobs.example/a2"] = FakeResponse(200, f"<p>{LONG}</p>")
+        postings.fetch_missing(moved, self.dir, "2026-11-08", session=self.session)
+        self.assertEqual(postings.closed_since(self.dir, "a"), "")
+
+
 if __name__ == "__main__":
     unittest.main()
