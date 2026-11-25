@@ -1398,11 +1398,55 @@ function toggleLiked(id) {
 }
 
 function toggleHidden(id) {
-  if (hiddenJobs.has(id)) hiddenJobs.delete(id);
-  else hiddenJobs.add(id);
+  const hiding = !hiddenJobs.has(id);
+  if (hiding) hiddenJobs.add(id);
+  else hiddenJobs.delete(id);
   saveIdSet(HIDDEN_KEY, hiddenJobs);
   savePreferences();
   render();
+  if (hiding) showUndoHide(id);
+  else hideUndoToast();
+}
+
+// ── Undo after hiding ───────────────────────────────────────────────────────
+// One notice at a time: a new hide replaces it, and it goes away on its own.
+const UNDO_MS = 6000;
+let undoTimer = 0;
+
+function undoToastEl() {
+  let el = document.getElementById("undoToast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "undoToast";
+    el.className = "undo-toast";
+    el.setAttribute("role", "status");
+    el.hidden = true;
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function showUndoHide(id) {
+  const job = jobs.find((j) => j.id === id);
+  const el = undoToastEl();
+  const text = document.createElement("span");
+  text.textContent = `Hidden: ${job?.title || "job"}`;
+  const undo = document.createElement("button");
+  undo.type = "button";
+  undo.textContent = "Undo";
+  undo.addEventListener("click", () => {
+    if (hiddenJobs.has(id)) toggleHidden(id);
+    else hideUndoToast();
+  });
+  el.replaceChildren(text, undo);
+  el.hidden = false;
+  clearTimeout(undoTimer);
+  undoTimer = setTimeout(hideUndoToast, UNDO_MS);
+}
+
+function hideUndoToast() {
+  clearTimeout(undoTimer);
+  undoToastEl().hidden = true;
 }
 
 function splitTags(job) {
