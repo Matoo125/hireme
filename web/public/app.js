@@ -33,6 +33,13 @@ async function getJwt() {
   return cachedJwt;
 }
 
+// The auth server sends you back to the bare origin, so the search (filters
+// in the URL) is kept here across the round trip.
+const RETURN_KEY = "jobBoard.returnTo";
+// Set on the load that completes a login: loadPreferences then merges this
+// browser's likes and hides into the account's instead of replacing them.
+let justLoggedIn = false;
+
 function handleAuthCallback() {
   const hash = window.location.hash;
   if (!hash.includes("token=")) return;
@@ -42,13 +49,25 @@ function handleAuthCallback() {
   if (token) {
     localStorage.setItem(TOKEN_KEY, token);
     if (user) localStorage.setItem(USER_KEY, user);
+    justLoggedIn = true;
+    let search = window.location.search;
+    try {
+      search = sessionStorage.getItem(RETURN_KEY) ?? search;
+      sessionStorage.removeItem(RETURN_KEY);
+    } catch {}
     // Clear the fragment without triggering a reload
-    history.replaceState(null, "", window.location.pathname + window.location.search);
+    history.replaceState(null, "", window.location.pathname + search);
   }
 }
 
+// Replaced in tests, which can't follow the redirect.
+let loginRedirect = (url) => { window.location.href = url; };
+
 function login() {
-  window.location.href = `${AUTH_URL}/?redirect=${encodeURIComponent(window.location.origin)}`;
+  try {
+    sessionStorage.setItem(RETURN_KEY, window.location.search);
+  } catch {}
+  loginRedirect(`${AUTH_URL}/?redirect=${encodeURIComponent(window.location.origin)}`);
 }
 
 function logout() {
@@ -81,6 +100,8 @@ function updateAuthUI() {
   const digestSection = document.getElementById("digestSection");
 
   if (isLoggedIn()) {
+    const nudge = document.getElementById("loginNudge");
+    if (nudge) nudge.hidden = true;
     loginBtn.hidden = true;
     userInfo.hidden = false;
     userName.textContent = getUser() || "User";
@@ -1374,16 +1395,22 @@ async function loadPreferences() {
     });
     if (res.ok) {
       const data = await res.json();
+      // Right after logging in, keep what was triaged logged out too.
+      const merge = justLoggedIn;
+      justLoggedIn = false;
+      const localLiked = merge ? [...likedJobs] : [];
+      const localHidden = merge ? [...hiddenJobs] : [];
       likedJobs.clear();
       hiddenJobs.clear();
-      for (const id of data.liked || []) likedJobs.add(id);
-      for (const id of data.hidden || []) hiddenJobs.add(id);
+      for (const id of [...(data.liked || []), ...localLiked]) likedJobs.add(id);
+      for (const id of [...(data.hidden || []), ...localHidden]) hiddenJobs.add(id);
+      const added = likedJobs.size !== (data.liked || []).length || hiddenJobs.size !== (data.hidden || []).length;
       saveIdSet(LIKED_KEY, likedJobs);
       saveIdSet(HIDDEN_KEY, hiddenJobs);
       const merged = mergeVisits(visits, data.visits);
       visits = merged;
       saveVisits();
-      if (JSON.stringify(merged) !== JSON.stringify(data.visits)) savePreferences();
+      if (added || JSON.stringify(merged) !== JSON.stringify(data.visits)) savePreferences();
       render();
     } else if (res.status === 404) {
       savePreferences();
@@ -1397,6 +1424,52 @@ function toggleLiked(id) {
   saveIdSet(LIKED_KEY, likedJobs);
   savePreferences();
   render();
+  maybeShowLoginNudge();
+}
+
+// ── Login nudge ─────────────────────────────────────────────────────────────
+// Logged out, triage lives only in this browser: say so once, after the first
+// like or hide, with a way to log in. Dismissing it is remembered.
+const NUDGE_KEY = "jobBoard.loginNudgeDismissed";
+
+function loginNudgeEl() {
+  let el = document.getElementById("loginNudge");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "loginNudge";
+    el.className = "notice login-nudge";
+    el.setAttribute("role", "status");
+    el.hidden = true;
+    const text = document.createElement("span");
+    text.textContent = "Your likes and hidden jobs are saved only in this browser. Log in to keep them on every device.";
+    const loginBtn = document.createElement("button");
+    loginBtn.type = "button";
+    loginBtn.className = "btn btn--primary btn--small";
+    loginBtn.textContent = "Log in";
+    loginBtn.addEventListener("click", login);
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "btn btn--quiet btn--small";
+    close.textContent = "×";
+    close.setAttribute("aria-label", "Dismiss");
+    close.addEventListener("click", () => {
+      try {
+        localStorage.setItem(NUDGE_KEY, "1");
+      } catch {}
+      el.hidden = true;
+    });
+    el.append(text, loginBtn, close);
+    countEl.closest(".count-row").before(el);
+  }
+  return el;
+}
+
+function maybeShowLoginNudge() {
+  let dismissed = false;
+  try {
+    dismissed = localStorage.getItem(NUDGE_KEY) === "1";
+  } catch {}
+  loginNudgeEl().hidden = isLoggedIn() || dismissed || (!likedJobs.size && !hiddenJobs.size);
 }
 
 function toggleHidden(id) {
@@ -1406,6 +1479,7 @@ function toggleHidden(id) {
   saveIdSet(HIDDEN_KEY, hiddenJobs);
   savePreferences();
   render();
+  maybeShowLoginNudge();
   if (hiding) showUndoHide(id);
   else hideUndoToast();
 }
@@ -2905,6 +2979,7 @@ async function init() {
   jobs = await res.json();
   readFiltersFromUrl();
   render();
+  maybeShowLoginNudge();
   loadPreferences();
   loadApplications();
   loadFit();

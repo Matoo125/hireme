@@ -63,7 +63,10 @@ skills, other_tags, europe, europe_reason, corrected
   Advocacy Careers).
 
 Per-user like/not-relevant state lives only in browser `localStorage` on the client — never sent
-to the server, doesn't sync across devices, wiped on clearing site data.
+to the server, doesn't sync across devices, wiped on clearing site data. Logged out, the
+first like or hide shows a one-time, dismissable notice saying so, with a login button. On the load
+that completes a login, this browser's likes and hides are merged into the account's (later loads
+take the account's as they are), and the search in the URL is restored after the auth round trip.
 
 Logged-in users (auth via `api.altfresh.sk`, a bearer JWT verified against its JWKS — see §5) get
 server-persisted per-user data under `data/`, one JSON file per user id, created on first
